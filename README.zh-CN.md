@@ -8,9 +8,11 @@
 
 [English](README.md) · [开始使用](#开始使用) · [隐私与数据](#隐私与数据) · [参与贡献](#参与贡献)
 
+[![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml) [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 </div>
 
-> **Windows 早期开发版。** 当前版本尚未覆盖原 macOS 项目的全部数据源和功能。现阶段请按下方说明从源码构建；公开下载包准备好后会在这里提供入口。
+> **Windows 早期开发版。** 当前版本尚未覆盖原 macOS 项目的全部数据源和功能。
 
 ![Agent Meter 面板，图中为虚构演示数据](windows/assets/screenshot.png)
 
@@ -44,7 +46,11 @@
 - 从源码构建需要 Python 3.10 和 .NET 8 SDK。构建出的独立目录包含 Python 后端和 .NET 运行时。
 - 查看 Codex 账户额度需要可用且已登录的 `codex.exe`，其位置应在 `PATH` 中或 Codex Desktop 安装目录内。Agent Meter 不负责登录账户。
 
-### 构建和运行
+### 下载预览版
+
+前往 [Windows v0.1.0-alpha.1 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含运行环境。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互和另一台全新 Windows 实机尚未验证。
+
+### 从源码构建
 
 在项目根目录打开 PowerShell：
 

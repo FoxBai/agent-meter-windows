@@ -8,9 +8,11 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 [简体中文](README.zh-CN.md) · [Getting started](#getting-started) · [Privacy](#privacy-and-data) · [Contributing](#contributing)
 
+[![Windows build](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 </div>
 
-> **Early Windows port.** The app is under active development. The Windows release does not yet contain every provider, feature or interface from the original macOS project. Build from source as described below; published downloads will be linked here once available.
+> **Early Windows port.** The app is under active development. The Windows release does not yet contain every provider, feature or interface from the original macOS project.
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
@@ -44,7 +46,11 @@ The application reports only data it can read. A provider or account may omit fi
 - To build: Python 3.10 and the .NET 8 SDK. The resulting self-contained bundle includes its Python backend and .NET runtime.
 - For Codex account quota, a working, signed-in `codex.exe` must be on `PATH` or in the Codex Desktop installation directory. No account login is performed by Agent Meter.
 
-### Build and run
+### Download the preview
+
+Download [Windows v0.1.0-alpha.1](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle and a separate clean physical installation have not yet been verified.
+
+### Build from source
 
 In PowerShell from the repository root:
 
