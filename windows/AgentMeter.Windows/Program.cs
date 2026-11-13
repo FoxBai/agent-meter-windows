@@ -20,26 +20,30 @@ internal static class Program
 internal sealed class MeterContext : ApplicationContext
 {
     readonly NotifyIcon tray;
+    readonly Icon icon;
     readonly MeterWindow window;
     bool quitting;
     public MeterContext(bool demo, bool windowed)
     {
-        window = new MeterWindow(demo, windowed);
+        using var iconStream = typeof(Program).Assembly.GetManifestResourceStream("AgentMeter.Icon") ?? throw new InvalidOperationException("icon_missing");
+        icon = new Icon(iconStream);
+        window = new MeterWindow(demo, windowed) { Icon = icon };
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel());
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
-        tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = SystemIcons.Information, ContextMenuStrip = menu, Visible = true };
+        tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(); } };
-        window.FormClosing += (_, e) => { if (!quitting) { e.Cancel = true; window.Hide(); } };
+        window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
+        window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
         ShowPanel();
         _ = window.RefreshData();
     }
     void ShowPanel() { window.PlaceAtTray(); window.Show(); window.Activate(); }
     protected override void ExitThreadCore()
     {
-        quitting = true; tray.Visible = false; tray.Dispose(); window.Close(); window.Dispose();
+        quitting = true; tray.Visible = false; tray.Dispose(); if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
         base.ExitThreadCore();
     }
 }
@@ -52,13 +56,14 @@ internal sealed class MeterWindow : Form
     readonly Button refresh = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
+    readonly HistoryWorker historyWorker = new();
     readonly bool demo;
     bool busy;
 
     public MeterWindow(bool demo, bool windowed)
     {
-        this.demo = demo; Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 9F); BackColor = Background; ForeColor = Color.White;
-        ClientSize = new Size(440, 670); MinimumSize = new Size(400, 450); StartPosition = FormStartPosition.Manual;
+        this.demo = demo; Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
+        ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
         var header = new Panel { Dock = DockStyle.Top, Height = 100 };
         var title = new Label { Text = "◈  AGENT METER", Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.White };
@@ -78,7 +83,7 @@ internal sealed class MeterWindow : Form
         var area = Screen.PrimaryScreen?.WorkingArea ?? Screen.GetWorkingArea(Point.Empty);
         Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
     }
-    protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); timer.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
 
     public async Task RefreshData()
     {
@@ -86,22 +91,37 @@ internal sealed class MeterWindow : Form
         busy = true; refresh.Enabled = false; status.Text = "正在刷新，本机记录较多时可能需要一些时间…";
         try
         {
-            if (demo) { using var preview = JsonDocument.Parse(DemoData); Render(preview.RootElement); }
+            if (demo) { using var preview = JsonDocument.Parse(DemoData); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户"; }
             else
             {
+                bool partialFailure = false;
                 var accountTask = RunCollector("--account-only", shutdown.Token);
-                var historyTask = RunCollector("--local-only", shutdown.Token);
-                var combined = JsonNode.Parse(await accountTask)!.AsObject();
-                combined["history"] = new JsonObject();
+                var historyTask = historyWorker.RefreshAsync(shutdown.Token);
+                JsonObject combined;
+                try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
+                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                {
+                    partialFailure = true;
+                    combined = new JsonObject { ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
+                }
+                combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
-                status.Text = "账户已更新 · 正在扫描本机会话记录…";
-                var local = JsonNode.Parse(await historyTask)!.AsObject();
-                combined["history"] = local["history"]?.DeepClone();
+                status.Text = "账户读取完成 · 正在扫描本机会话记录…";
+                try
+                {
+                    var local = JsonNode.Parse(await historyTask)!.AsObject();
+                    combined["history"] = local["history"]?.DeepClone();
+                }
+                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                {
+                    partialFailure = true;
+                    combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "error", ["reason"] = "history_scan_failed" } };
+                }
                 using var final = JsonDocument.Parse(combined.ToJsonString()); Render(final.RootElement);
+                status.Text = partialFailure ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
             }
-            status.Text = demo ? "演示数据 · 不代表真实账户" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
         }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
         {
             if (IsDisposed || Disposing) return;
             content.Controls.Clear(); AddHeading("暂时无法读取数据", "请确认应用文件完整后重试。");
@@ -144,6 +164,26 @@ internal sealed class MeterWindow : Form
             }
         }
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
+        var credits = GetValue(GetValue(account, "credits"), "value");
+        if (credits.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var credit in credits.EnumerateArray())
+            {
+                var balance = GetValue(credit, "balance");
+                var unlimited = GetValue(credit, "unlimited");
+                if (balance.ValueKind != JsonValueKind.String && unlimited.ValueKind != JsonValueKind.True) continue;
+                string amount = unlimited.ValueKind == JsonValueKind.True ? "无限额" : balance.GetString() ?? "未提供";
+                AddCard("CODEX · 积分", amount, "供应商返回的账户积分", null);
+            }
+        }
+        var resetCards = GetValue(GetValue(account, "reset_cards"), "value");
+        var cardCount = GetNumber(resetCards, "available_count");
+        if (cardCount.HasValue)
+        {
+            double? expires = GetNumber(GetValue(resetCards, "next_known_expiry"), "epoch_seconds");
+            string note = expires.HasValue ? "最近到期 " + DateTimeOffset.FromUnixTimeSeconds((long)expires.Value).LocalDateTime.ToString("MM-dd HH:mm") : "到期时间未提供";
+            AddCard("CODEX · 重置卡", $"{cardCount:0} 张可用", note, null);
+        }
         AddHeading("本机 Token", "只统计本设备可读取的会话记录");
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
@@ -169,6 +209,8 @@ internal sealed class MeterWindow : Form
         "cli_not_available" => "未找到 Codex；请安装并登录后刷新",
         "rpc_timeout" => "账户查询超时，请稍后重试",
         "rpc_disconnected" => "Codex 服务未连接，请检查登录状态",
+        "history_loading" => "后台扫描中，请稍候",
+        "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
         "zstd_unavailable" => "部分压缩会话无法读取",
         _ => "未连接、未提供数据或读取失败"
@@ -181,13 +223,13 @@ internal sealed class MeterWindow : Form
     }
     void AddCard(string name, string value, string detail, double? progress)
     {
-        var box = new Panel { Height = progress.HasValue ? 105 : 87, Margin = new Padding(0, 0, 0, 9), BackColor = Card };
-        box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
+        var box = new Panel { Height = progress.HasValue ? 112 : 95, Margin = new Padding(0, 0, 0, 9), BackColor = Card };
+        box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
         box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
-        box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 79 : 62) });
+        box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 84 : 67) });
         if (progress.HasValue)
         {
-            var bar = new MeterBar { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 66), Height = 5 };
+            var bar = new MeterBar { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 70), Height = 5 };
             box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32);
             box.Controls.Add(bar);
         }
@@ -202,4 +244,51 @@ internal sealed class MeterBar : Control
 {
     public double Value { get; set; }
     protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(Color.FromArgb(53, 67, 79)); using var brush = new SolidBrush(Value < 20 ? Color.FromArgb(244, 136, 116) : Color.FromArgb(117, 220, 194)); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
+}
+
+/// <summary>One local, read-only worker preserves parsed usage in memory between refreshes.</summary>
+internal sealed class HistoryWorker : IDisposable
+{
+    Process? process;
+    public async Task<string> RefreshAsync(CancellationToken shutdown)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
+        timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        try
+        {
+            if (process is null || process.HasExited)
+            {
+                Stop();
+                var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
+                if (!File.Exists(path)) throw new IOException("backend_missing");
+                process = new Process { StartInfo = new ProcessStartInfo(path, "--history-worker")
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true,
+                    StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8
+                } };
+                if (!process.Start()) throw new InvalidOperationException("backend_start_failed");
+                _ = process.StandardError.ReadToEndAsync();
+            }
+            await process.StandardInput.WriteLineAsync("{\"command\":\"refresh\"}".AsMemory(), timeout.Token);
+            await process.StandardInput.FlushAsync(timeout.Token);
+            string? response = await process.StandardOutput.ReadLineAsync(timeout.Token);
+            if (response is null) throw new IOException("worker_disconnected");
+            using var doc = JsonDocument.Parse(response);
+            if (doc.RootElement.TryGetProperty("error", out _)) throw new IOException("worker_failed");
+            return response;
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
+    }
+    void Stop()
+    {
+        if (process is null) return;
+        try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
+        process.Dispose(); process = null;
+    }
+    public void Dispose() => Stop();
 }

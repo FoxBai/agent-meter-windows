@@ -1,0 +1,42 @@
+name: Windows port
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv-win
+          .\.venv-win\Scripts\python.exe -m pip install -r windows\requirements.txt
+      - name: Test Windows collectors
+        shell: pwsh
+        run: .\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+      - name: Build self-contained application
+        shell: pwsh
+        run: ./windows/build.ps1
+      - name: Smoke test packaged backend with an isolated home
+        shell: pwsh
+        run: |
+          $env:CODEX_HOME = ''
+          $env:CLAUDE_CONFIG_DIR = ''
+          $env:DSH_HOME = ''
+          $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-empty"
+          if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
+          $data = $result | ConvertFrom-Json
+          if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }

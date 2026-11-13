@@ -18,6 +18,7 @@ from agent_meter.transport import CodexRPC
 from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
+from agent_meter.record_cache import records_cache
 
 
 def codex_binary():
@@ -76,13 +77,69 @@ def collect(local_only=False, home=None, account_only=False):
                 "history": {name: future.result() for name, future in futures.items()}}
 
 
+def compact_history(result):
+    """Send only fields the tray renders, keeping large per-model series local."""
+    compact = {"version": result["version"], "observed_at": result["observed_at"],
+               "account": result["account"], "history": {}}
+    for name, item in result["history"].items():
+        value = item.get("value")
+        periods = value.get("periods", {}) if isinstance(value, dict) else {}
+        all_period = periods.get("all", {})
+        all_totals = all_period.get("totals", {}) if isinstance(all_period, dict) else {}
+        # An existing but empty history directory is not evidence of zero use.
+        if isinstance(all_totals, dict) and all_totals.get("requests") == 0:
+            compact["history"][name] = {"status": "not_provided", "reason": "history_no_usage_records", "value": None}
+            continue
+        selected = {}
+        for period in ("today", "all"):
+            bucket = periods.get(period)
+            totals = bucket.get("totals") if isinstance(bucket, dict) else None
+            if isinstance(totals, dict) and "total_tokens" in totals:
+                selected[period] = {"totals": {"total_tokens": totals["total_tokens"]}}
+        compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
+                                    "value": {"periods": selected} if selected else None}
+    return compact
+
+
+def history_worker(home=None):
+    """Keep the upstream parsed-usage cache in memory between refreshes.
+
+    No transcripts or credentials are persisted. File metadata invalidates a
+    cached item when its source changes; upstream applies its normal eviction
+    and completeness rules. The tiny stdin protocol exposes no path or code
+    execution interface.
+    """
+    records_cache.max_bytes = 128 * 1024 * 1024
+    records_cache.max_entries = 50000
+    for line in sys.stdin:
+        if len(line) > 1024:
+            print('{"error":"invalid_request"}', flush=True)
+            continue
+        try:
+            request = json.loads(line.lstrip("\ufeff"))
+            if request != {"command": "refresh"}:
+                raise ValueError("invalid request")
+            result = compact_history(collect(local_only=True, home=home))
+            print(json.dumps(result, ensure_ascii=False, separators=(",", ":")), flush=True)
+        except (ValueError, TypeError, KeyError):
+            print('{"error":"invalid_request"}', flush=True)
+        except Exception:
+            # Never return exception text, paths, source data, or credentials.
+            print('{"error":"history_scan_failed"}', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--local-only", action="store_true")
     parser.add_argument("--account-only", action="store_true")
+    parser.add_argument("--history-worker", action="store_true")
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.history_worker:
+        sys.stdin.reconfigure(encoding="utf-8")
+        history_worker(args.home)
+        return
     print(json.dumps(collect(args.local_only, args.home, args.account_only), ensure_ascii=False, separators=(",", ":")))
 
 

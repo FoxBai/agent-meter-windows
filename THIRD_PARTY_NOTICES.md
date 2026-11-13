@@ -1,5 +1,9 @@
 # Third party notices
 
+## Windows bundle
+
+The Windows build includes CPython, the PyInstaller bootloader, python-zstandard, tzdata, and the .NET runtime. Their license texts and .NET third-party notices are copied into the Windows bundle's `licenses/` directory by `windows/build.ps1`. Dependency versions are listed in `windows/requirements.txt`. The MIT license and copyright for the upstream Agent Meter project are in the root `LICENSE` file. The notices below are retained from the upstream repository; not every listed component is bundled in the Windows application.
+
 ## CC Switch
 
 The SQL filtering and token normalization in `agent_meter/ccswitch_sql.py` are adapted from CC Switch 4.0.22. The MiniMax parsing in `agent_meter/minimax.py` remains adapted from CC Switch 4.0.5.
