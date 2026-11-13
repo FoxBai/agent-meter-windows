@@ -9,7 +9,7 @@ Use Windows x64, Python 3.10 and the .NET 8 SDK. From the repository root:
 ```powershell
 py -3.10 -m venv .venv-win
 .\.venv-win\Scripts\python.exe -m pip install -r windows\requirements.txt
-.\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+powershell -NoProfile -ExecutionPolicy Bypass -File windows\test.ps1
 dotnet build windows\AgentMeter.Windows -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1
 ```

@@ -22,10 +22,12 @@ The screenshot uses fictional demo data. Actual availability depends on the agen
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
-- **Local usage** — reads supported session ledgers and displays today's and all-time token totals. Account quota and local usage are separate measures.
+- **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
 ## Data sources
+
+The table describes the current `main` branch. The published alpha.1 package predates the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers and the 7/30-day views.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
@@ -35,8 +37,12 @@ The screenshot uses fictional demo data. Actual availability depends on the agen
 | WorkBuddy | Not yet | Local project sessions |
 | ZCode | Not yet | Local CLI usage database |
 | DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
+| Kimi Code / legacy Kimi CLI | Not yet | Local session logs |
+| OpenCode | Not yet | Local v1 message database; v2 records are flagged as incomplete |
+| MiniMax Code, MiMo Code, DevECo | Not yet | Local usage databases |
+| Qoder CN | Not yet | Local credits consumed, not token usage or account balance |
 
-The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
+The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode's v2 messages are not yet counted. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
 
 ## Getting started
 
@@ -74,7 +80,7 @@ For a synthetic preview without reading accounts or local history:
 ### Tests
 
 ```powershell
-.\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+powershell -NoProfile -ExecutionPolicy Bypass -File windows\test.ps1
 dotnet build windows\AgentMeter.Windows -c Release
 ```
 
@@ -90,7 +96,7 @@ This Windows port is independent of the optional reward-claiming features in the
 
 - **No tray icon:** open the hidden-icons menu in the notification area. Start with `--window` to inspect the panel.
 - **No Codex quota:** confirm `codex.exe` is available and signed in, then refresh. A network or service failure can also make account data unavailable.
-- **No local history:** run the agent on this Windows account and check the corresponding local history exists. `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `DSH_HOME` override their respective default roots.
+- **No local history:** run the agent on this Windows account and check the corresponding local history exists. `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `DSH_HOME`, `KIMI_CODE_HOME`, `XDG_DATA_HOME` and `OPENCODE_DB` can override the corresponding default paths.
 - **First refresh is slow:** the first scan parses existing files. Later refreshes are generally faster while the app remains running; changing files, cache eviction or very large histories can still take time.
 - **Values differ from a provider dashboard:** local history and account-wide reporting have different scope and timing. A missing or unsupported field remains unavailable rather than being assumed to be zero.
 

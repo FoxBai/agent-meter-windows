@@ -22,10 +22,12 @@
 
 - **系统托盘面板**：左键托盘图标显示或隐藏面板，右键可打开、刷新或退出。关闭面板后程序仍留在托盘。
 - **Codex 账户额度**：在账户服务提供数据时，展示额度窗口、重置时间、积分及重置卡。未提供的字段不会按零显示。
-- **本机用量**：读取支持的会话账本，展示今日和累计 Token。账户额度和本机历史分别展示，统计范围不同。
+- **本机用量**：读取支持的会话账本，展示今日、近 7 天、近 30 天和累计 Token。Qoder CN 本机积分消耗单独展示，不计入 Token。账户额度和本机历史分别展示，统计范围不同。
 - **后台刷新**：账户数据可先显示，历史记录继续在后台扫描。支持手动刷新和每 15 分钟自动刷新；程序运行期间会在内存中缓存已解析的用量，变化的文件会重新读取。
 
 ## 数据来源
+
+下表描述当前 `main` 分支。已发布的 alpha.1 安装包早于新增的 Kimi、OpenCode、MiniMax Code、MiMo Code、DevECo、Qoder CN 读取器及 7/30 天视图。
 
 | 来源 | 账户额度 | 本机 Token 历史 |
 | --- | --- | --- |
@@ -35,8 +37,12 @@
 | WorkBuddy | 暂不支持 | 本地项目会话 |
 | ZCode | 暂不支持 | 本地 CLI 用量数据库 |
 | DeepSeek Harness | 暂不支持 | 本机会话日志，包含受支持的压缩日志 |
+| Kimi Code / 旧版 Kimi CLI | 暂不支持 | 本机会话日志 |
+| OpenCode | 暂不支持 | 本地 v1 消息数据库；检测到 v2 记录时提示统计不完整 |
+| MiniMax Code、MiMo Code、DevECo | 暂不支持 | 本机用量数据库 |
+| Qoder CN | 暂不支持 | 本机积分消耗，不是 Token 或账户余额 |
 
-工具只展示实际读取到的数据。不同账户可能不提供某些字段，应用版本变化也可能影响读取。本机历史只覆盖当前电脑可见的记录，不等于账户总用量、账单或套餐剩余额度。目前“今日”等统计周期按**北京时间（Asia/Shanghai）**划分，不会把不同服务的积分相加。
+新增的 Kimi、OpenCode、MiniMax Code、MiMo Code、DevECo 和 Qoder CN 读取器已通过 Windows 模拟数据测试，但尚未在这台 Windows 电脑上用对应真实安装验证；OpenCode v2 消息暂不计入。工具只展示实际读取到的数据。不同账户可能不提供某些字段，应用版本变化也可能影响读取。本机历史只覆盖当前电脑可见的记录，不等于账户总用量、账单或套餐剩余额度。目前“今日”等统计周期按**北京时间（Asia/Shanghai）**划分，不会把不同服务的积分相加。
 
 ## 开始使用
 
@@ -74,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1
 ### 运行测试
 
 ```powershell
-.\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+powershell -NoProfile -ExecutionPolicy Bypass -File windows\test.ps1
 dotnet build windows\AgentMeter.Windows -c Release
 ```
 
@@ -90,7 +96,7 @@ Windows 适配层读取本机会话文件和用量数据库，提取用量指标
 
 - **找不到托盘图标**：展开通知区域的隐藏图标；也可以使用 `--window` 检查面板。
 - **没有 Codex 额度**：确认 `codex.exe` 可用且已登录，再刷新；网络或服务异常也可能导致暂时不可用。
-- **没有本机历史**：确认当前 Windows 用户已使用过相应 Agent，且本机记录仍存在。可通过 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`DSH_HOME` 覆盖对应默认目录。
+- **没有本机历史**：确认当前 Windows 用户已使用过相应 Agent，且本机记录仍存在。可通过 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`DSH_HOME`、`KIMI_CODE_HOME`、`XDG_DATA_HOME` 和 `OPENCODE_DB` 覆盖对应默认路径。
 - **首次刷新较慢**：首次需要解析已有文件，程序保持运行时后续刷新通常较快；文件变化、缓存淘汰或记录过多仍可能影响速度。
 - **和官方页面数字不同**：本机历史与账户统计的范围、更新时间不同；缺失或无法识别的字段不会被假定为零。
 

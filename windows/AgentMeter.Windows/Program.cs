@@ -111,6 +111,7 @@ internal sealed class MeterWindow : Form
                 {
                     var local = JsonNode.Parse(await historyTask)!.AsObject();
                     combined["history"] = local["history"]?.DeepClone();
+                    combined["local_credits"] = local["local_credits"]?.DeepClone();
                 }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                 {
@@ -188,14 +189,49 @@ internal sealed class MeterWindow : Form
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
         {
+            int visible = 0;
             foreach (var item in history.EnumerateObject())
             {
+                if (IsAbsent(item.Value)) continue;
+                visible++;
                 var periods = GetValue(GetValue(item.Value, "value"), "periods");
                 var today = GetValue(GetValue(periods, "today"), "totals"); var all = GetValue(GetValue(periods, "all"), "totals");
+                var week = GetValue(GetValue(periods, "7d"), "totals"); var month = GetValue(GetValue(periods, "30d"), "totals");
                 double? dayTokens = GetNumber(today, "total_tokens"), allTokens = GetNumber(all, "total_tokens");
-                var note = allTokens.HasValue ? "累计 " + FormatNumber(allTokens.Value) + " tokens" : Reason(item.Value);
-                if (GetString(item.Value, "status", "") == "partial") note += " · 部分记录未读取";
-                AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " 今日" : "暂无数据", note, null);
+                double? weekTokens = GetNumber(week, "total_tokens"), monthTokens = GetNumber(month, "total_tokens");
+                var note = allTokens.HasValue && weekTokens.HasValue && monthTokens.HasValue
+                    ? $"近 7 天 {FormatNumber(weekTokens.Value)}  ·  近 30 天 {FormatNumber(monthTokens.Value)}"
+                    : allTokens.HasValue ? "累计 " + FormatNumber(allTokens.Value) + " tokens" : Reason(item.Value);
+                string? extra = allTokens.HasValue && weekTokens.HasValue && monthTokens.HasValue ? "累计 " + FormatNumber(allTokens.Value) + " tokens" : null;
+                if (GetString(item.Value, "status", "") == "partial")
+                {
+                    string detail = GetString(item.Value, "reason", "") == "opencode_v2_unread" ? "新版记录未计入" : "部分记录未读取";
+                    if (extra is null) note += " · " + detail; else extra += " · " + detail;
+                }
+                AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " 今日" : "暂无数据", note, null, extra);
+            }
+            if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
+        }
+        var creditsHistory = GetValue(root, "local_credits");
+        if (creditsHistory.ValueKind == JsonValueKind.Object)
+        {
+            bool headingShown = false;
+            foreach (var item in creditsHistory.EnumerateObject())
+            {
+                if (IsAbsent(item.Value) || GetString(item.Value, "reason", "") == "history_no_usage_records") continue;
+                if (!headingShown) { AddHeading("本机积分", "独立计量，不等于账户余额"); headingShown = true; }
+                var periods = GetValue(GetValue(item.Value, "value"), "periods");
+                var today = GetValue(GetValue(periods, "today"), "totals");
+                var all = GetValue(GetValue(periods, "all"), "totals");
+                var week = GetValue(GetValue(periods, "7d"), "totals");
+                var month = GetValue(GetValue(periods, "30d"), "totals");
+                string todayCredits = GetString(today, "credits", "");
+                string allCredits = GetString(all, "credits", "");
+                string billed = GetString(all, "billable_credits", "");
+                string weekly = GetString(week, "credits", "—"), monthly = GetString(month, "credits", "—");
+                AddCard(item.Name + " · 本机积分消耗", todayCredits == "" ? "暂无数据" : todayCredits + " 今日",
+                        allCredits == "" ? Reason(item.Value) : $"近 7 天 {weekly} · 近 30 天 {monthly}", null,
+                        allCredits == "" ? null : $"累计 {allCredits} · 计费 {billed}");
             }
         }
         content.ResumeLayout(); ResizeCards();
@@ -204,6 +240,10 @@ internal sealed class MeterWindow : Form
     static JsonElement GetValue(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
     static string GetString(JsonElement e, string key, string fallback) { var v = GetValue(e, key); return v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback; }
     static double? GetNumber(JsonElement e, string key) { var v = GetValue(e, key); return v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n) ? n : null; }
+    static bool IsAbsent(JsonElement e) => (GetString(e, "status", "") is "unavailable" or "not_provided") && GetString(e, "reason", "") is
+        "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or
+        "zcode_db_not_found" or "dsh_sessions_not_found" or "kimi_sessions_not_found" or "kimi_legacy_sessions_not_found" or
+        "opencode_db_not_found" or "opencode_memory_database" or "mcode_db_not_found" or "mimocode_db_not_found" or "deveco_db_not_found" or "qoder_sessions_not_found";
     static string Reason(JsonElement e) => GetString(e, "reason", "") switch
     {
         "cli_not_available" => "未找到 Codex；请安装并登录后刷新",
@@ -213,6 +253,9 @@ internal sealed class MeterWindow : Form
         "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
         "zstd_unavailable" => "部分压缩会话无法读取",
+        "unsupported_qoder_usage_schema" => "当前 Qoder 记录格式暂不支持",
+        "opencode_v2_unread" => "检测到新版记录，暂未计入",
+        "unsupported_opencode_schema" => "当前 OpenCode 数据格式暂不支持",
         _ => "未连接、未提供数据或读取失败"
     };
     void AddHeading(string title, string subtitle)
@@ -221,12 +264,13 @@ internal sealed class MeterWindow : Form
         box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Color.White });
         box.Controls.Add(new Label { Text = subtitle, AutoSize = true, Location = new Point(3, 32), ForeColor = Muted }); content.Controls.Add(box);
     }
-    void AddCard(string name, string value, string detail, double? progress)
+    void AddCard(string name, string value, string detail, double? progress, string? extra = null)
     {
-        var box = new Panel { Height = progress.HasValue ? 112 : 95, Margin = new Padding(0, 0, 0, 9), BackColor = Card };
+        var box = new Panel { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 9), BackColor = Card };
         box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
         box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
         box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 84 : 67) });
+        if (extra is not null) box.Controls.Add(new Label { Text = extra, AutoSize = true, ForeColor = Muted, Location = new Point(16, 91) });
         if (progress.HasValue)
         {
             var bar = new MeterBar { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 70), Height = 5 };
@@ -237,7 +281,7 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
     """;
 }
 internal sealed class MeterBar : Control

@@ -26,7 +26,7 @@ jobs:
           .\.venv-win\Scripts\python.exe -m pip install -r windows\requirements.txt
       - name: Test Windows collectors
         shell: pwsh
-        run: .\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+        run: ./windows/test.ps1
       - name: Build self-contained application
         shell: pwsh
         run: ./windows/build.ps1
@@ -36,6 +36,9 @@ jobs:
           $env:CODEX_HOME = ''
           $env:CLAUDE_CONFIG_DIR = ''
           $env:DSH_HOME = ''
+          $env:KIMI_CODE_HOME = ''
+          $env:XDG_DATA_HOME = ''
+          $env:OPENCODE_DB = ''
           $result = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-empty"
           if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
           $data = $result | ConvertFrom-Json
