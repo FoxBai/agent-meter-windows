@@ -40,6 +40,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
           $data = $result | ConvertFrom-Json
           if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }
+      - name: Smoke test application startup
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--demo' -WindowStyle Hidden -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            $app.Refresh()
+            if ($app.HasExited) { throw "Application exited during startup with code $($app.ExitCode)" }
+          } finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id }
+          }
       - name: Package portable build
         shell: pwsh
         run: ./windows/package.ps1
