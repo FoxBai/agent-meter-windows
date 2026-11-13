@@ -24,6 +24,9 @@ class WindowsBackendTests(unittest.TestCase):
                       {'requests': 0, 'total_tokens': 0}}}}}}}
         item = backend.compact_history(metric)['history']['Codex']
         self.assertEqual(item, {'status': 'not_provided', 'reason': 'history_no_usage_records', 'value': None})
+        metric['history']['Codex'].update(status='partial', reason='codex_rollout_unreadable')
+        item = backend.compact_history(metric)['history']['Codex']
+        self.assertEqual(item, {'status': 'partial', 'reason': 'codex_rollout_unreadable', 'value': None})
 
     def test_worker_output_only_contains_panel_fields(self):
         source = {'version': 1, 'observed_at': 1, 'account': {'status': 'disabled'}, 'history':

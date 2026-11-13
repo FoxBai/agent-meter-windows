@@ -88,7 +88,9 @@ def compact_history(result):
         all_totals = all_period.get("totals", {}) if isinstance(all_period, dict) else {}
         # An existing but empty history directory is not evidence of zero use.
         if isinstance(all_totals, dict) and all_totals.get("requests") == 0:
-            compact["history"][name] = {"status": "not_provided", "reason": "history_no_usage_records", "value": None}
+            partial = item.get("status") == "partial"
+            compact["history"][name] = {"status": "partial" if partial else "not_provided",
+                                        "reason": item.get("reason") if partial else "history_no_usage_records", "value": None}
             continue
         selected = {}
         for period in ("today", "all"):

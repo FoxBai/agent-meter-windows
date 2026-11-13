@@ -40,3 +40,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
           $data = $result | ConvertFrom-Json
           if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }
+      - name: Package portable build
+        shell: pwsh
+        run: ./windows/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-Windows-x64
+          path: |
+            windows/release/AgentMeter-Windows-x64.zip
+            windows/release/SHA256SUMS.txt
+          if-no-files-found: error

@@ -13,6 +13,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows application build failed.' }
 New-Item -ItemType Directory -Path 'windows\dist\AgentMeter\backend' -Force | Out-Null
 Copy-Item -Path 'windows\dist\AgentMeterBackend\*' -Destination 'windows\dist\AgentMeter\backend' -Recurse -Force
 Copy-Item -LiteralPath LICENSE,THIRD_PARTY_NOTICES.md -Destination 'windows\dist\AgentMeter' -Force
+Copy-Item -LiteralPath 'windows\QUICK_START.md' -Destination 'windows\dist\AgentMeter' -Force
 $licenses = 'windows\dist\AgentMeter\licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 $basePython = (& $python -c 'import sys; print(sys.base_prefix)').Trim()

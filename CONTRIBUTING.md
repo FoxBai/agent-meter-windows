@@ -1,28 +1,21 @@
-# 参与贡献
+# Contributing
 
-使用 Python 3.9+；压缩日志测试在 Python 3.9–3.13 上需要 `zstd` CLI（macOS: `brew install zstd`，Ubuntu: `sudo apt-get install zstd`）。Python 3.14 可使用标准库 `compression.zstd`。原生界面需要 macOS 14+ 和 Xcode/Swift 5.10+。
+Thanks for helping improve the Windows port. Please open an issue describing significant changes before starting a large redesign, so that data semantics and platform constraints can be discussed.
 
-```sh
-python3 scripts/test-offline.py
-python3 -m pip install build
-python3 -m build
-python3 scripts/check-package-version.py
-cd menubar
-swift test
-swift build -c release
+## Development setup
+
+Use Windows x64, Python 3.10 and the .NET 8 SDK. From the repository root:
+
+```powershell
+py -3.10 -m venv .venv-win
+.\.venv-win\Scripts\python.exe -m pip install -r windows\requirements.txt
+.\.venv-win\Scripts\python.exe -m unittest tests.test_windows_port tests.test_sources tests.test_dsh_tokens tests.test_cli_sessions.CodexTests tests.test_local_tokens.ZCodeTests tests.test_local_tokens.WorkBuddyTests -q
+dotnet build windows\AgentMeter.Windows -c Release
+powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1
 ```
 
-桌宠相关改动另需（Node 18+，仅用内置测试运行器）：
+The build output is in `windows/dist/AgentMeter/`. `--demo` uses synthetic display data; `--window` shows the live-data panel as a normal taskbar window. Document any platform, account or feature that was not actually tested.
 
-```sh
-node --test pets/runtime/test/*.test.mjs
-python3 pets/tools/petpack.py validate pets/presets/* --strict
-```
+Tests must use synthetic data and temporary paths. Preserve the distinction between account quota and local history, and do not turn absent or unsupported values into zero. Never commit credentials, transcripts, real account snapshots or private runtime data. Run `git diff --check` before submitting a change.
 
-形象包只含数据与图片（禁止脚本、SVG、符号链接）；新增内置预设请改 `pets/tools/build_presets.py` 后重新生成，测试会检查生成结果与已提交 JSON 一致。
-
-离线测试入口使用临时 HOME、移除继承的账户环境变量、禁用默认账户 CLI 和外部网络。HTTP 测试仅连接回环地址。新增采集器测试必须使用合成数据、临时目录和 mock，不依赖开发者真实账户。不要把 `agent_meter verify` 真实环境对账加入 CI。
-
-提交前检查 `git diff --check`，在 PR 说明修改行为、验证命令与未完成的验证。修改数据合并时保留「未知不等于零」、独立账本和账户隔离边界。不要提交 `.runtime/`、认证文件、真实会话或账户快照。
-
-发布版本只修改根目录 `VERSION`，并同步发布说明；Python 元数据和 macOS 打包均读取它。`dist/` 校验要求干净构建目录。应用签名、公证与发布包验收属于额外发布步骤，不由 PR CI 自动执行。
+For changes to the original macOS interface or other upstream components, see the retained [upstream contribution guide](docs/UPSTREAM-CONTRIBUTING.md) and coordinate with [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) as appropriate. This Windows port is an independent fork.
