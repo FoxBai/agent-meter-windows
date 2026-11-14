@@ -8,7 +8,7 @@ import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
@@ -178,6 +178,54 @@ def recent_daily_trend(result):
             "sources": sources, "incomplete": incomplete} if sources else None
 
 
+def calendar_report(result):
+    """汇总北京时间自然周和自然月；当前周期为截至采集时的部分周期。"""
+    today = datetime.fromtimestamp(result["observed_at"], DISPLAY_ZONE).date()
+    week = today - timedelta(days=today.weekday())
+    month = today.replace(day=1)
+    last_month = (month - timedelta(days=1)).replace(day=1)
+    bounds = {"week": (week - timedelta(days=7), week), "month": (last_month, month)}
+    out = {kind: {"previous_start": previous.isoformat(), "current_start": current.isoformat(),
+                  "current_end": today.isoformat(), "previous_tokens": 0, "current_tokens": 0}
+           for kind, (previous, current) in bounds.items()}
+    sources = 0
+    incomplete = False
+    for item in result["history"].values():
+        status, reason = item.get("status"), item.get("reason") or ""
+        if status in {"error", "partial"} or (status == "unavailable" and reason and not reason.endswith("_not_found")):
+            incomplete = True
+        value = item.get("value")
+        if not isinstance(value, dict):
+            continue
+        all_totals = value.get("periods", {}).get("all", {}).get("totals", {})
+        if all_totals.get("requests") == 0:
+            continue
+        rows = value.get("daily_buckets")
+        if not isinstance(rows, list):
+            incomplete = True
+            continue
+        sources += 1
+        for row in rows:
+            if not isinstance(row, dict):
+                incomplete = True
+                continue
+            try:
+                day = date.fromisoformat(row.get("date", ""))
+            except (TypeError, ValueError):
+                incomplete = True
+                continue
+            count = row.get("tokens")
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                incomplete = True
+                continue
+            for kind, (previous, current) in bounds.items():
+                if current <= day <= today:
+                    out[kind]["current_tokens"] += count
+                elif previous <= day < current:
+                    out[kind]["previous_tokens"] += count
+    return {"periods": out, "sources": sources, "incomplete": incomplete, "timezone": "Asia/Shanghai"} if sources else None
+
+
 _DEFAULT_PRICE_TABLE = object()
 
 
@@ -282,6 +330,7 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
             # 价格估算失败不影响本机用量显示，也不把未知价格当作零。
             pass
     compact["daily_trend"] = recent_daily_trend(result)
+    compact["calendar_report"] = calendar_report(result)
     compact["local_credits"] = {}
     for name, item in result.get("local_credits", {}).items():
         value = item.get("value")

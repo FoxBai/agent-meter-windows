@@ -237,6 +237,24 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(trend['sources'], 2)
         self.assertTrue(trend['incomplete'])
 
+    def test_calendar_report_uses_natural_periods_and_marks_missing_data(self):
+        now = datetime(2026, 1, 1, 4, 0, tzinfo=timezone.utc).timestamp()
+        source = {'version': 1, 'observed_at': now, 'account': {}, 'history': {
+            '甲': {'status': 'available', 'value': {'periods': {}, 'daily_buckets': [
+                {'date': '2025-12-15', 'tokens': 30}, {'date': '2025-12-28', 'tokens': 50},
+                {'date': '2025-12-30', 'tokens': 100}, {'date': '2026-01-01', 'tokens': 200},
+                {'date': '2026-01-02', 'tokens': 300}]}},
+            '乙': {'status': 'partial', 'reason': 'some_skipped', 'value': {'periods': {}}}}}
+        report = backend.compact_history(source)['calendar_report']
+        self.assertEqual(report['periods']['week']['current_start'], '2025-12-29')
+        self.assertEqual(report['periods']['week']['current_tokens'], 300)
+        self.assertEqual(report['periods']['week']['previous_tokens'], 50)
+        self.assertEqual(report['periods']['month']['current_start'], '2026-01-01')
+        self.assertEqual(report['periods']['month']['current_tokens'], 200)
+        self.assertEqual(report['periods']['month']['previous_tokens'], 180)
+        self.assertEqual(report['sources'], 1)
+        self.assertTrue(report['incomplete'])
+
     def test_estimated_cost_uses_known_groups_and_marks_unknown_models(self):
         priced = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                   'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}

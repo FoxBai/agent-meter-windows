@@ -29,12 +29,13 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
+- **Calendar reports** — the main branch adds local totals for the current and previous calendar week and month, indicating that the current period is incomplete. This page is not in Alpha 2; export and sharing are still in development.
 - **API-equivalent estimates** — shows today's USD estimate for models with matching prices. Missing prices, breakdowns or peak/off-peak information are flagged. The tray menu can edit local USD overrides to the upstream built-in snapshot. Built-in prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Live price and exchange-rate updates are not yet available.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
 ## Data sources
 
-The table describes the current `main` branch. The Alpha 2 preview includes these features; see subsequent release notes for later source changes.
+The table describes the current `main` branch. The Alpha 2 preview includes these data sources; the calendar report page was added later. See subsequent release notes for other changes.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
