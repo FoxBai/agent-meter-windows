@@ -125,7 +125,7 @@ internal sealed class MeterWindow : Form
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
         preferredSize = Size;
         Resize += (_, _) => { if (!positioning && WindowState == FormWindowState.Normal) preferredSize = Size; };
-        header.Dock = DockStyle.Top; header.Height = 270; header.BackColor = Background;
+        header.Dock = DockStyle.Top; header.Height = 280; header.BackColor = Background;
         title.Text = "◈  Agent 用量"; title.Font = new Font(Font.FontFamily, 17F, FontStyle.Bold); title.AutoSize = true; title.Location = new Point(22, 16); title.ForeColor = Accent;
         subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = true; subtitle.Location = new Point(25, 55); subtitle.ForeColor = Muted;
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
@@ -137,13 +137,13 @@ internal sealed class MeterWindow : Form
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold); tab.Size = new Size(110, 36);
         }
-        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 120);
+        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 135);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
         header.Controls.Add(gauges);
-        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 217);
-        usageTab.Text = "本机消耗"; usageTab.Location = new Point(136, 217);
-        reportTab.Text = "用量报告"; reportTab.Location = new Point(250, 217);
+        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 228);
+        usageTab.Text = "本机消耗"; usageTab.Location = new Point(136, 228);
+        reportTab.Text = "用量报告"; reportTab.Location = new Point(250, 228);
         accountTab.Click += (_, _) => SetView(View.Accounts); usageTab.Click += (_, _) => SetView(View.Usage);
         reportTab.Click += (_, _) => SetView(View.Report);
         header.Controls.AddRange([accountTab, usageTab, reportTab]); UpdateTabs();
@@ -592,22 +592,8 @@ internal sealed class MeterWindow : Form
     }
     void AddGauge(string provider, JsonElement account)
     {
-        var quotas = GetValue(GetValue(account, "quota"), "value");
-        if (quotas.ValueKind != JsonValueKind.Array) return;
-        foreach (var row in quotas.EnumerateArray())
-        {
-            var remaining = GetNumber(row, "remaining_percent");
-            if (!remaining.HasValue) continue;
-            var minutes = GetNumber(row, "window_minutes");
-            var bucket = GetString(row, "bucket", "");
-            var window = GetValue(row, "window");
-            var duration = GetNumber(window, "duration");
-            var unit = GetString(window, "unit", "");
-            string label = minutes == 300 || bucket is "limit5h" or "5h" ? "5 小时" : minutes == 10080 || bucket is "limit7d" or "week" ? "7 天" :
-                duration.HasValue ? $"{duration:0.#}{(unit == "hour" ? "小时" : unit == "week" ? "周" : unit)}" : GetString(row, "window", bucket);
-            gauges.Controls.Add(new QuotaGauge(provider, label, Math.Clamp(remaining.Value, 0, 100), theme));
-            return;
-        }
+        var windows = QuotaWindows.Select(account);
+        if (windows is not null) gauges.Controls.Add(new QuotaGauge(provider, windows, theme));
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
     static JsonElement GetValue(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
@@ -802,28 +788,41 @@ internal sealed class MeterBar : Control
 }
 internal sealed class QuotaGauge : Control
 {
-    readonly string provider, period;
-    readonly double remaining;
+    readonly string provider;
+    readonly QuotaWindowPair windows;
     readonly VisualTheme theme;
-    public QuotaGauge(string provider, string period, double remaining, VisualTheme theme)
+    public QuotaGauge(string provider, QuotaWindowPair windows, VisualTheme theme)
     {
-        this.provider = provider; this.period = period; this.remaining = remaining; this.theme = theme;
-        Size = new Size(110, 110); Margin = new Padding(0, 0, 9, 0);
-        AccessibleRole = AccessibleRole.Graphic; AccessibleName = $"{provider} {period}，剩余 {remaining:0.#}%";
+        this.provider = provider; this.windows = windows; this.theme = theme;
+        Size = new Size(95, 130); Margin = new Padding(0, 0, 7, 0);
+        AccessibleRole = AccessibleRole.Graphic;
+        AccessibleName = $"{provider} {windows.Primary.Label}，剩余 {windows.Primary.Remaining:0.#}%" +
+            (windows.Secondary is null ? "" : $"；{windows.Secondary.Label}，剩余 {windows.Secondary.Remaining:0.#}%");
         DoubleBuffered = true;
     }
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e); e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var ring = new Rectangle(25, 4, 52, 52);
-        using var track = new Pen(theme.Border, 7);
-        using var fill = new Pen(remaining < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(255, 98, 135)) : remaining < 50 ? (theme.Light ? Color.FromArgb(160, 96, 0) : Color.FromArgb(255, 169, 58)) : theme.Accent, 7);
-        fill.StartCap = fill.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-        e.Graphics.DrawArc(track, ring, -90, 359); if (remaining > 0) e.Graphics.DrawArc(fill, ring, -90, (float)(3.59 * remaining));
-        using var valueFont = new Font(Font.FontFamily, 11F, FontStyle.Bold);
-        TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), theme.Primary, TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), theme.Secondary, TextFormatFlags.HorizontalCenter);
+        void Ring(Rectangle rect, double remaining, Color normal)
+        {
+            using var track = new Pen(theme.Border, 5);
+            using var fill = new Pen(remaining < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(255, 98, 135)) :
+                remaining < 50 ? (theme.Light ? Color.FromArgb(160, 96, 0) : Color.FromArgb(255, 169, 58)) : normal, 5);
+            fill.StartCap = fill.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            e.Graphics.DrawArc(track, rect, -90, 359);
+            if (remaining > 0) e.Graphics.DrawArc(fill, rect, -90, (float)(3.59 * remaining));
+        }
+        var outer = new Rectangle(17, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);
+        if (windows.Secondary is not null)
+            Ring(new Rectangle(25, 12, 44, 44), windows.Secondary.Remaining,
+                theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
+        using var valueFont = new Font(Font.FontFamily, 8F, FontStyle.Bold);
+        using var small = new Font(Font.FontFamily, 8F);
+        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(29, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 67, Width, 20), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Label} {windows.Primary.Remaining:0.#}%", small, new Rectangle(0, 88, Width, 19), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
+        if (windows.Secondary is not null)
+            TextRenderer.DrawText(e.Graphics, $"{windows.Secondary.Label} {windows.Secondary.Remaining:0.#}%", small, new Rectangle(0, 107, Width, 19), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
     }
 }
 internal sealed class DailyChart : Control

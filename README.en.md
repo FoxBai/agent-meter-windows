@@ -25,6 +25,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 - **Low-quota alerts** — optionally enable Windows notifications below 20% remaining; repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
+- **Two-window gauges** — the main branch pairs a short window with the seven-day window where available, or shows a single ring otherwise. Alpha 2 has single-ring gauges; the new layout still needs device testing.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
 - **MiniMax Code account** — the main branch can use the existing `MINIMAX_TOKEN_PLAN_KEY` environment variable after the user enables the lookup. `MINIMAX_REGION` selects `cn` or `global`; restart the app after changing environment variables. Synthetic tests only; not in Alpha 2.

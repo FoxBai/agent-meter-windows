@@ -95,6 +95,28 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(minimax, now).Single().Contains("5 小时"))
         throw new InvalidOperationException("MiniMax 额度提醒应显示中文周期");
+    using var quotaData = JsonDocument.Parse("""
+    {"quota":{"value":[{"bucket":"seven_day_opus","window_minutes":10080,"remaining_percent":5},
+      {"bucket":"seven_day","window_minutes":10080,"remaining_percent":46},
+      {"bucket":"five_hour","window_minutes":300,"remaining_percent":73}]}}
+    """);
+    var pair = QuotaWindows.Select(quotaData.RootElement);
+    if (pair?.Primary.Remaining != 73 || pair.Secondary?.Remaining != 46 || pair.Secondary.Label != "7 天")
+        throw new InvalidOperationException("额度仪表应配对通用短周期和七天周期");
+    using var singleQuota = JsonDocument.Parse("""
+    {"quota":{"value":[{"bucket":"seven_day_opus","window_minutes":10080,"remaining_percent":15},
+      {"bucket":"bad","remaining_percent":120}]}}
+    """);
+    var single = QuotaWindows.Select(singleQuota.RootElement);
+    if (single?.Primary.Label != "7 天 Opus" || single.Secondary is not null)
+        throw new InvalidOperationException("单独额度或异常百分比处理错误");
+    using var kimiPair = JsonDocument.Parse("""
+    {"quota":{"value":[{"bucket":"monthTotal","remaining_percent":80},
+      {"bucket":"limit7d","remaining_percent":42}, {"bucket":"limit5h","remaining_percent":64}]}}
+    """);
+    var kimiWindows = QuotaWindows.Select(kimiPair.RootElement);
+    if (kimiWindows?.Primary.Remaining != 64 || kimiWindows.Secondary?.Remaining != 42)
+        throw new InvalidOperationException("Kimi 月度额度不应代替短周期或七天周期");
     using var reportData = JsonDocument.Parse("""
     {"account":{"credential":"synthetic-secret"},"history":{"message":"synthetic-private-text"},"calendar_report":{"incomplete":true,"periods":{
       "week":{"previous_start":"2025-12-22","current_start":"2025-12-29","current_end":"2026-01-01","previous_tokens":50,"current_tokens":300},
