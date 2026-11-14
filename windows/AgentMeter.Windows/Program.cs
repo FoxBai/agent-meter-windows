@@ -69,6 +69,9 @@ internal sealed class MeterContext : ApplicationContext
             var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
             menu.Items.Add(alerts);
+            var forecast = new ToolStripMenuItem("第三方重置预测（联网）") { Checked = window.ForecastEnabled };
+            forecast.Click += (_, _) => { if (window.SetForecastEnabled(!forecast.Checked)) forecast.Checked = !forecast.Checked; };
+            menu.Items.Add(forecast);
         }
         var appearance = new ToolStripMenuItem("界面风格");
         foreach (var themeOption in VisualThemes.All)
@@ -181,7 +184,7 @@ internal sealed class MeterContext : ApplicationContext
 
 internal sealed class MeterWindow : Form
 {
-    enum View { Accounts, Applications, Usage, Report }
+    enum View { Accounts, Applications, Usage, Report, Forecast }
     VisualTheme theme;
     Color Background => theme.Background;
     Color Card => theme.Card;
@@ -193,7 +196,7 @@ internal sealed class MeterWindow : Form
     readonly Button refresh = new();
     readonly Panel header = new();
     readonly Label title = new(), subtitle = new();
-    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new();
+    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new();
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
@@ -202,7 +205,7 @@ internal sealed class MeterWindow : Form
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
-    bool busy, refreshQueued, positioning, alertsEnabled;
+    bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled;
     Size preferredSize;
     View view = View.Accounts;
     string? lastSnapshot;
@@ -214,6 +217,7 @@ internal sealed class MeterWindow : Form
     {
         this.demo = demo; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
         alertsEnabled = !demo && AlertPreferences.Load(AccountPreferences.DefaultDirectory);
+        forecastEnabled = !demo && ForecastPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
@@ -226,8 +230,8 @@ internal sealed class MeterWindow : Form
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
-        header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); };
-        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab })
+        header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); LayoutTabs(); };
+        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = new Font(Font.FontFamily, 9F, FontStyle.Bold); tab.Size = new Size(86, 36);
@@ -236,14 +240,13 @@ internal sealed class MeterWindow : Form
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
         header.Controls.Add(gauges);
-        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 228);
-        applicationsTab.Text = "应用"; applicationsTab.Location = new Point(112, 228);
-        usageTab.Text = "本机消耗"; usageTab.Location = new Point(202, 228);
-        reportTab.Text = "用量报告"; reportTab.Location = new Point(292, 228);
+        accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
+        usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测";
         accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
         usageTab.Click += (_, _) => SetView(View.Usage);
         reportTab.Click += (_, _) => SetView(View.Report);
-        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab]); UpdateTabs();
+        forecastTab.Click += (_, _) => SetView(View.Forecast);
+        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab]); LayoutTabs(); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
@@ -275,7 +278,7 @@ internal sealed class MeterWindow : Form
         {
             SetTheme(option);
             foreach (var (tab, name) in new[] { (View.Accounts, "accounts"), (View.Applications, "applications"),
-                                               (View.Usage, "usage"), (View.Report, "report") })
+                                               (View.Usage, "usage"), (View.Report, "report"), (View.Forecast, "forecast") })
             {
                 SetView(tab);
                 Application.DoEvents();
@@ -289,10 +292,20 @@ internal sealed class MeterWindow : Form
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
     void UpdateTabs()
     {
-        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report) })
+        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast) })
         {
             button.BackColor = view == tab ? theme.Selected : Card;
             button.ForeColor = view == tab ? Color.White : Primary;
+        }
+    }
+    void LayoutTabs()
+    {
+        var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab };
+        int width = Math.Max(1, (header.ClientSize.Width - 44 - 4 * (tabs.Length - 1)) / tabs.Length);
+        for (int index = 0; index < tabs.Length; index++)
+        {
+            tabs[index].Size = new Size(width, 36);
+            tabs[index].Location = new Point(22 + index * (width + 4), 228);
         }
     }
     public string ThemeId => theme.Id;
@@ -325,6 +338,24 @@ internal sealed class MeterWindow : Form
         return RefreshData();
     }
     public bool AlertsEnabled => alertsEnabled;
+    public bool ForecastEnabled => forecastEnabled;
+    public bool SetForecastEnabled(bool enabled)
+    {
+        try { ForecastPreferences.Save(AccountPreferences.DefaultDirectory, enabled); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存预测设置，请检查设置目录权限"; return false; }
+        forecastEnabled = enabled;
+        accountCancellation?.Cancel();
+        if (lastSnapshot is not null)
+        {
+            var snapshot = JsonNode.Parse(lastSnapshot)!.AsObject();
+            snapshot["forecast"] = new JsonObject { ["status"] = enabled ? "loading" : "disabled" };
+            using var doc = JsonDocument.Parse(snapshot.ToJsonString()); Render(doc.RootElement);
+        }
+        if (busy) { refreshQueued = true; status.Text = "预测设置已保存，当前刷新结束后生效"; }
+        else _ = RefreshData();
+        return true;
+    }
     public event Action<IReadOnlyList<string>>? QuotaLow;
     public bool SetAlertsEnabled(bool enabled)
     {
@@ -380,6 +411,7 @@ internal sealed class MeterWindow : Form
         if (!preferences.Kimi) others["Kimi Code"] = Disabled();
         if (!preferences.Claude) others["Claude Code"] = Disabled();
         if (!preferences.MiniMax) others["MiniMax Code"] = Disabled();
+        if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
     public async Task RefreshData()
@@ -388,7 +420,12 @@ internal sealed class MeterWindow : Form
         busy = true; refresh.Enabled = false; status.Text = "正在刷新，本机记录较多时可能需要一些时间…";
         try
         {
-            if (demo) { using var preview = JsonDocument.Parse(DemoData); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户"; }
+            if (demo)
+            {
+                var sample = JsonNode.Parse(DemoData)!.AsObject();
+                sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
+                using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
+            }
             else
             {
                 bool partialFailure = false;
@@ -407,6 +444,7 @@ internal sealed class MeterWindow : Form
                 var accountTask = RunCollector(arguments, accountCancellation.Token, accountInput);
                 accountInput = null;
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
+                var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
                 JsonObject combined;
                 try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
@@ -421,6 +459,7 @@ internal sealed class MeterWindow : Form
                 }
                 ApplyAccountPreferences(combined);
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
+                combined["forecast"] = new JsonObject { ["status"] = forecastEnabled ? "loading" : "disabled" };
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) { Render(first.RootElement); NotifyLowQuota(first.RootElement); }
                 status.Text = "账户读取完成 · 正在扫描本机会话记录…";
                 try
@@ -439,8 +478,16 @@ internal sealed class MeterWindow : Form
                     combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "error", ["reason"] = "history_scan_failed" } };
                 }
                 ApplyAccountPreferences(combined);
-                using var final = JsonDocument.Parse(combined.ToJsonString()); Render(final.RootElement);
+                using (var localSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(localSnapshot.RootElement);
                 status.Text = partialFailure ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
+                if (forecastTask is not null)
+                {
+                    try { combined["forecast"] = JsonNode.Parse(await forecastTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["forecast"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var final = JsonDocument.Parse(combined.ToJsonString()); Render(final.RootElement);
+                }
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
@@ -655,8 +702,43 @@ internal sealed class MeterWindow : Form
             }
         }
         }
-        else AddCalendarReport(GetValue(root, "calendar_report"));
+        else if (view == View.Report) AddCalendarReport(GetValue(root, "calendar_report"));
+        else AddForecast(GetValue(root, "forecast"));
         content.ResumeLayout(); ResizeCards();
+    }
+    void AddForecast(JsonElement forecast)
+    {
+        AddHeading("重置预测", "第三方公开预测 · 不代表账户自身的重置时间");
+        string state = GetString(forecast, "status", "disabled");
+        if (state == "disabled")
+        {
+            AddCard("第三方预测", "默认关闭", "在托盘菜单开启后访问三个第三方网站", null,
+                    "WillReset · Tibo Radar · Reset Monitor");
+            return;
+        }
+        if (state == "loading") { AddCard("第三方预测", "正在读取", "不会发送账户凭据或本机会话", null); return; }
+        var rows = GetValue(forecast, "sources");
+        if (state is "error" or "unavailable" || rows.ValueKind != JsonValueKind.Array)
+        {
+            AddCard("第三方预测", "暂时无法获取", "请检查网络或稍后刷新", null);
+            return;
+        }
+        string cache = GetString(forecast, "cache_state", "");
+        if (cache == "stale") AddCard("数据状态", "使用旧缓存", "最新查询失败，预测可能已过时", null);
+        else if (state == "partial") AddCard("数据状态", "部分来源不可用", "以下数值由各站独立发布或推算", null);
+        foreach (var row in rows.EnumerateArray())
+        {
+            string name = GetString(row, "name", "第三方");
+            if (GetString(row, "status", "") is not ("available" or "stale"))
+            { AddCard(name, "暂时不可用", "此来源未返回可用预测", null); continue; }
+            var day = GetNumber(row, "24h"); var twoDays = GetNumber(row, "48h");
+            string first = day.HasValue ? $"24 小时 {day:0.#}%" : "24 小时未提供";
+            string second = twoDays.HasValue ? $"48 小时 {twoDays:0.#}%" : "48 小时未提供";
+            string basis = GetString(row, "24h_basis", "") == "cadence_model_fallback" || GetString(row, "48h_basis", "") == "cadence_model_fallback"
+                ? "含站点模型推算值" : "站点公布值";
+            AddCard(name, first, second, null, basis);
+        }
+        AddCard("统计说明", "仅供参考", "第三方预测并非官方承诺，也不是个人额度周期", null);
     }
     void AddApplications(JsonElement activity)
     {

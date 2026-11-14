@@ -129,6 +129,11 @@ try
     if (AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒首次应默认关闭");
     AlertPreferences.Save(directory, true);
     if (!AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒设置未保存");
+    if (ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测首次应默认关闭");
+    ForecastPreferences.Save(directory, true);
+    if (!ForecastPreferences.Load(directory)) throw new InvalidOperationException("第三方预测设置未保存");
+    File.WriteAllText(Path.Combine(directory, "forecast-preferences.json"), "{invalid");
+    if (ForecastPreferences.Load(directory)) throw new InvalidOperationException("损坏的预测设置必须保持关闭");
     if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("桌宠首次应默认隐藏");
     var petSettings = new PetPreferences(true, "bit", -1200, 200);
     petSettings.Save(directory);

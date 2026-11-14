@@ -24,6 +24,37 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_forecast_projection_keeps_basis_and_never_invents_missing_values(self):
+        source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
+            'cache_state': 'stale', 'sources': [
+                {'source': 'willreset', 'status': 'available', 'headline_24h': 30,
+                 'raw_24h': 10, 'raw_48h': 40, 'private_text': 'must-not-leak'},
+                {'source': 'codex_reset', 'status': 'error', 'raw_24h': 0},
+                {'source': 'codexreset_org', 'status': 'available', 'headline_24h': float('nan'), 'raw_48h': 101},
+                {'source': 'unknown', 'status': 'available', 'raw_24h': 50}]}}}}
+        result = backend.forecast_summary(source)
+        self.assertEqual(result['status'], 'partial')
+        self.assertEqual(result['cache_state'], 'stale')
+        self.assertEqual(result['sources'][0]['24h'], 30)
+        self.assertEqual(result['sources'][0]['24h_basis'], 'published_answer')
+        self.assertEqual(result['sources'][0]['48h'], 40)
+        self.assertEqual(result['sources'][0]['48h_basis'], 'cadence_model_fallback')
+        self.assertNotIn('24h', result['sources'][1])
+        self.assertNotIn('24h', result['sources'][2])
+        self.assertNotIn('48h', result['sources'][2])
+        self.assertEqual(len(result['sources']), 3)
+        self.assertNotIn('must-not-leak', json.dumps(result))
+
+    def test_forecast_cache_is_used_only_when_called(self):
+        with tempfile.TemporaryDirectory() as root, patch('windows.backend.collect_reset_forecast') as collect:
+            backend.collect(account_only=True, home=root, disabled_accounts=frozenset({'codex', 'kimi', 'claude'}))
+            collect.assert_not_called()
+            collect.return_value = {'status': 'available', 'metrics': {'reset_forecast': {'value': {'sources': []}}}}
+            result = backend.forecast_only(Path(root) / 'forecast')
+            self.assertEqual(result['status'], 'available')
+            self.assertEqual(collect.call_args.kwargs['cache_path'], Path(root) / 'forecast' / 'reset-forecast.json')
+        self.assertEqual(backend.forecast_summary({'metrics': {}})['status'], 'unavailable')
+
     def test_minimax_account_is_opt_in_and_uses_fixed_service(self):
         payload = {'base_resp': {'status_code': 0}, 'model_remains': [{'model_name': 'general',
             'current_interval_remaining_percent': 65, 'end_time': 1800003600000}]}
