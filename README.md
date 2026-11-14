@@ -16,7 +16,15 @@
 
 ![Agent Meter 面板，图中为虚构演示数据](windows/assets/screenshot.png)
 
-截图来自较早的 Alpha 界面，使用虚构演示数据；当前源码界面已调整。实际可显示的字段取决于工具、账户、本机记录和版本。
+截图在隔离的 Windows 构建环境中使用虚构演示数据生成；窗口边框可能因系统版本而异。实际可显示的字段取决于工具、账户、本机记录和版本。
+
+<details>
+<summary>查看本机消耗和报告页面</summary>
+
+![本机消耗页面，图中为虚构演示数据](windows/assets/usage-preview.png)
+
+![用量报告页面，图中为虚构演示数据](windows/assets/report-preview.png)
+</details>
 
 <details>
 <summary>查看报告分享图示例</summary>

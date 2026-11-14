@@ -16,7 +16,7 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version. The [sample report image](windows/assets/report-share-preview.png) was generated from fictional data; reports are included in Alpha 3.
+The screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
 
 ## What it does
 
