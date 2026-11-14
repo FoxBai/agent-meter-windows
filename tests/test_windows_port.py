@@ -28,8 +28,8 @@ class WindowsBackendTests(unittest.TestCase):
         source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
             'cache_state': 'stale', 'sources': [
                 {'source': 'willreset', 'status': 'available', 'headline_24h': 30,
-                 'raw_24h': 10, 'raw_48h': 40, 'private_text': 'must-not-leak'},
-                {'source': 'codex_reset', 'status': 'error', 'raw_24h': 0},
+                 'raw_24h': 10, 'raw_48h': 40, 'updated_at': {'epoch_seconds': 1000}, 'private_text': 'must-not-leak'},
+                {'source': 'codex_reset', 'status': 'error', 'raw_24h': 0, 'updated_at': {'epoch_seconds': True}},
                 {'source': 'codexreset_org', 'status': 'available', 'headline_24h': float('nan'), 'raw_48h': 101},
                 {'source': 'unknown', 'status': 'available', 'raw_24h': 50}]}}}}
         result = backend.forecast_summary(source)
@@ -39,7 +39,9 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(result['sources'][0]['24h_basis'], 'published_answer')
         self.assertEqual(result['sources'][0]['48h'], 40)
         self.assertEqual(result['sources'][0]['48h_basis'], 'cadence_model_fallback')
+        self.assertEqual(result['sources'][0]['updated_at'], 1000)
         self.assertNotIn('24h', result['sources'][1])
+        self.assertNotIn('updated_at', result['sources'][1])
         self.assertNotIn('24h', result['sources'][2])
         self.assertNotIn('48h', result['sources'][2])
         self.assertEqual(len(result['sources']), 3)

@@ -735,9 +735,22 @@ internal sealed class MeterWindow : Form
             var day = GetNumber(row, "24h"); var twoDays = GetNumber(row, "48h");
             string first = day.HasValue ? $"24 小时 {day:0.#}%" : "24 小时未提供";
             string second = twoDays.HasValue ? $"48 小时 {twoDays:0.#}%" : "48 小时未提供";
-            string basis = GetString(row, "24h_basis", "") == "cadence_model_fallback" || GetString(row, "48h_basis", "") == "cadence_model_fallback"
-                ? "含站点模型推算值" : "站点公布值";
-            AddCard(name, first, second, null, basis);
+            string basis = !day.HasValue && !twoDays.HasValue ? "该站未提供可用数值" :
+                GetString(row, "24h_basis", "") == "cadence_model_fallback" || GetString(row, "48h_basis", "") == "cadence_model_fallback"
+                    ? "含站点模型推算值" : "站点公布值";
+            double? updated = GetNumber(row, "updated_at");
+            string updatedNote = "站点未提供更新时间";
+            if (updated.HasValue && double.IsFinite(updated.Value) && updated.Value >= 0 && updated.Value <= 253402300799)
+            {
+                try
+                {
+                    var stamp = DateTimeOffset.FromUnixTimeSeconds((long)updated.Value);
+                    updatedNote = "站点更新 " + stamp.LocalDateTime.ToString("MM-dd HH:mm") +
+                        (DateTimeOffset.UtcNow - stamp > TimeSpan.FromHours(48) ? " · 已超过 48 小时" : "");
+                }
+                catch (ArgumentException) { }
+            }
+            AddCard(name, first, second, null, basis, updatedNote);
         }
         AddCard("统计说明", "仅供参考", "第三方预测并非官方承诺，也不是个人额度周期", null);
     }

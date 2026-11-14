@@ -230,6 +230,11 @@ def forecast_summary(source):
         if not isinstance(item, dict) or item.get("source") not in names:
             continue
         row = {"name": names[item["source"]], "status": item.get("status") if item.get("status") in {"available", "stale"} else "unavailable"}
+        updated = item.get("updated_at")
+        updated = updated.get("epoch_seconds") if isinstance(updated, dict) else None
+        if (not isinstance(updated, bool) and isinstance(updated, (int, float)) and math.isfinite(updated)
+                and 0 <= updated <= 253402300799):
+            row["updated_at"] = int(updated)
         for period in ("24h", "48h"):
             number, basis = pooled_value(item, period)
             if (row["status"] in {"available", "stale"} and not isinstance(number, bool) and
