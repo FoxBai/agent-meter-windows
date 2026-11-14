@@ -123,7 +123,7 @@ def collect(local_only=False, home=None, account_only=False):
 
 
 def compact_history(result):
-    """仅向面板传递显示字段，避免传输大量模型明细。"""
+    """仅向面板传递显示字段；模型明细按用量排序并限制数量。"""
     compact = {"version": result["version"], "observed_at": result["observed_at"],
                "account": result["account"], "history": {}}
     for name, item in result["history"].items():
@@ -144,6 +144,18 @@ def compact_history(result):
             if isinstance(totals, dict) and "total_tokens" in totals:
                 keys = ("total_tokens", "requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write", "unclassified")
                 selected[period] = {"totals": {key: totals[key] for key in keys if key in totals}}
+                if period == "7d" and isinstance(bucket.get("groups"), list):
+                    groups = []
+                    for row in bucket["groups"]:
+                        if not isinstance(row, dict):
+                            continue
+                        model, count = row.get("model"), row.get("total_tokens")
+                        if (isinstance(model, str) and 0 < len(model) < 120 and
+                                isinstance(count, int) and not isinstance(count, bool) and count >= 0):
+                            groups.append({"model": model, "total_tokens": count})
+                    groups.sort(key=lambda row: row["total_tokens"], reverse=True)
+                    selected[period]["groups"] = groups[:20]
+                    selected[period]["groups_truncated"] = len(groups) > 20
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
                                     "value": {"periods": selected} if selected else None}
     compact["local_credits"] = {}

@@ -269,6 +269,7 @@ internal sealed class MeterWindow : Form
                 AddCard(item.Name, dayTokens.HasValue ? FormatNumber(dayTokens.Value) + " 今日" : "暂无数据", note, null, extra);
             }
             if (visible == 0) AddCard("本机记录", "暂无数据", "未发现支持的会话记录", null);
+            AddModelRanking(history);
         }
         var creditsHistory = GetValue(root, "local_credits");
         if (creditsHistory.ValueKind == JsonValueKind.Object)
@@ -400,9 +401,42 @@ internal sealed class MeterWindow : Form
         }
         content.Controls.Add(box);
     }
+    void AddModelRanking(JsonElement history)
+    {
+        var models = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        bool incomplete = false;
+        foreach (var item in history.EnumerateObject())
+        {
+            string status = GetString(item.Value, "status", "");
+            if (status is "error" or "partial") incomplete = true;
+            var week = GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "7d");
+            var total = GetNumber(GetValue(week, "totals"), "total_tokens");
+            if (!total.HasValue || total.Value <= 0) continue;
+            var groups = GetValue(week, "groups");
+            if (groups.ValueKind != JsonValueKind.Array) { incomplete = true; continue; }
+            double grouped = 0;
+            foreach (var row in groups.EnumerateArray())
+            {
+                string model = GetString(row, "model", ""); var amount = GetNumber(row, "total_tokens");
+                if (model.Length == 0 || !amount.HasValue || amount.Value < 0) { incomplete = true; continue; }
+                grouped += amount.Value;
+                models[model] = models.GetValueOrDefault(model) + amount.Value;
+            }
+            if (Math.Abs(grouped - total.Value) > 0.5 || GetValue(week, "groups_truncated").ValueKind == JsonValueKind.True) incomplete = true;
+        }
+        if (models.Count == 0) return;
+        AddHeading("近 7 天模型排行", incomplete ? "本机账本相加 · 部分模型记录不完整" : "本机账本相加 · 按 Token 排序");
+        int rank = 0;
+        foreach (var entry in models.OrderByDescending(pair => pair.Value).Take(5))
+        {
+            string label = new(entry.Key.Where(c => !char.IsControl(c)).Take(48).ToArray());
+            if (label.Length == 0 || label.Equals("unknown", StringComparison.OrdinalIgnoreCase)) label = "未识别模型";
+            AddCard($"{++rank}. {label}", FormatNumber(entry.Value) + " tokens", "近 7 天 · 按本机记录统计", null);
+        }
+    }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.2-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
     """;
 }
 internal sealed class RoundedCard : Panel

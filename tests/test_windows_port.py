@@ -9,7 +9,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -187,6 +187,16 @@ class WindowsBackendTests(unittest.TestCase):
                     worker.stdin.close()
                 worker.stdout.close(); worker.stderr.close()
 
+    def test_model_groups_are_bounded_sorted_and_exclude_other_fields(self):
+        rows = [{'model': f'model-{n}', 'total_tokens': n, 'private_detail': '不应发送'} for n in range(25)]
+        rows.extend([{'model': 'bad', 'total_tokens': -1}, {'model': 'bad', 'total_tokens': True}])
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'测试': {
+            'status': 'available', 'value': {'periods': {'7d': {'totals': {'total_tokens': 300}, 'groups': rows}}}}}}
+        period = backend.compact_history(source)['history']['测试']['value']['periods']['7d']
+        self.assertEqual(len(period['groups']), 20)
+        self.assertEqual(period['groups'][0], {'model': 'model-24', 'total_tokens': 24})
+        self.assertTrue(period['groups_truncated'])
+
     def test_account_only_does_not_start_history_scan(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \
              patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \
@@ -206,7 +216,7 @@ class WindowsBackendTests(unittest.TestCase):
 
     @unittest.skipUnless(zstandard is not None, 'python-zstandard is not installed')
     def test_compressed_codex_usage(self):
-        event = {'timestamp': datetime.now(timezone.utc).isoformat(), 'type': 'event_msg',
+        event = {'timestamp': (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat(), 'type': 'event_msg',
                  'payload': {'type': 'token_count', 'info': {'total_token_usage':
                      {'input_tokens': 100, 'cached_input_tokens': 40, 'output_tokens': 20, 'reasoning_output_tokens': 0}}}}
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CODEX_HOME': '', 'CLAUDE_CONFIG_DIR': '', 'DSH_HOME': '', 'KIMI_CODE_HOME': '', 'XDG_DATA_HOME': '', 'OPENCODE_DB': ''}):
