@@ -18,5 +18,13 @@
     <Compile Include="..\AgentMeter.Windows\CredentialVault.cs" Link="CredentialVault.cs" />
     <Compile Include="..\AgentMeter.Windows\MiniMaxProfiles.cs" Link="MiniMaxProfiles.cs" />
     <Compile Include="..\AgentMeter.Windows\MiniMaxAccountInput.cs" Link="MiniMaxAccountInput.cs" />
+    <Compile Include="..\AgentMeter.Windows\SpritePet.cs" Link="SpritePet.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetState.cs" Link="PetState.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetPreferences.cs" Link="PetPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\PetWindow.cs" Link="PetWindow.cs" />
+    <EmbeddedResource Include="..\..\pets\presets\mochi\pet.json" LogicalName="AgentMeter.Pet.mochi.pet.json" />
+    <EmbeddedResource Include="..\..\pets\presets\bit\pet.json" LogicalName="AgentMeter.Pet.bit.pet.json" />
+    <EmbeddedResource Include="..\..\pets\presets\mochi\sprites\*.png" LogicalName="AgentMeter.Pet.mochi.%(Filename).png" />
+    <EmbeddedResource Include="..\..\pets\presets\bit\sprites\*.png" LogicalName="AgentMeter.Pet.bit.%(Filename).png" />
   </ItemGroup>
 </Project>

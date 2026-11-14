@@ -129,6 +129,12 @@ try
     if (AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒首次应默认关闭");
     AlertPreferences.Save(directory, true);
     if (!AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒设置未保存");
+    if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("桌宠首次应默认隐藏");
+    var petSettings = new PetPreferences(true, "bit", -1200, 200);
+    petSettings.Save(directory);
+    if (PetPreferences.Load(directory) != petSettings) throw new InvalidOperationException("桌宠设置未正确保存");
+    File.WriteAllText(Path.Combine(directory, "pet-settings.json"), "broken");
+    if (PetPreferences.Load(directory).Enabled) throw new InvalidOperationException("损坏的桌宠设置应默认隐藏");
     var alerts = new QuotaAlerts();
     JsonElement Snapshot(double remaining, long reset, string status = "available") => JsonSerializer.SerializeToElement(new
     {
@@ -208,6 +214,60 @@ try
         share.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
     if (args.Length == 2 && args[0] == "--render-demo-light")
         lightShare.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
+    using var mochi = new SpritePet("mochi");
+    using var bit = new SpritePet("bit");
+    var idlePet = mochi.Frame("idle", 0, 240);
+    if (mochi.FrameCount("idle") != 4 || bit.FrameCount("working") != 4 ||
+        bit.FrameCount("unknown") != bit.FrameCount("idle") || idlePet.GetPixel(0, 0).A != 0)
+        throw new InvalidOperationException("桌宠动画清单或透明背景不正确");
+    int opaquePixels = 0;
+    for (int y = 0; y < idlePet.Height; y++)
+        for (int x = 0; x < idlePet.Width; x++)
+            if (idlePet.GetPixel(x, y).A > 0) opaquePixels++;
+    if (opaquePixels == 0 || opaquePixels >= idlePet.Width * idlePet.Height / 2)
+        throw new InvalidOperationException("桌宠图像应有可见角色和透明区域");
+    foreach (var sprite in new[] { mochi, bit })
+        foreach (string animation in new[] { "idle", "working", "tired", "alarm", "sleeping", "celebrate", "offline", "waiting" })
+        {
+            var image = sprite.Frame(animation, sprite.FrameCount(animation) - 1, 240);
+            if (image.Width != 240 || image.Height != 240 || image.GetPixel(0, 0).A != 0)
+                throw new InvalidOperationException("桌宠动画资源尺寸或透明度不正确");
+        }
+    if (args.Length == 2 && args[0] == "--render-pet") idlePet.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
+    using var noPetData = JsonDocument.Parse("{}");
+    if (PetState.Select(noPetData.RootElement, 10000).Animation != "idle") throw new InvalidOperationException("缺失额度不能显示耗尽");
+    using var lowPetData = JsonDocument.Parse("""
+    {"observed_at":10000,"other_accounts":{"MiniMax Code":[{"status":"available","quota":{"value":[{"remaining_percent":10,"resets_at":{"epoch_seconds":11000}}]}}]}}
+    """);
+    if (PetState.Select(lowPetData.RootElement, 10030).Animation != "alarm" || PetState.Select(lowPetData.RootElement, 11001).Animation != "idle" ||
+        PetState.Select(lowPetData.RootElement, 11201).Animation != "idle")
+        throw new InvalidOperationException("桌宠应识别低额度，并忽略过期快照");
+    using var activePetData = JsonDocument.Parse("""
+    {"activity":{"status":"available","apps":[{"last_updated":9500}]}}
+    """);
+    if (PetState.Select(activePetData.RootElement, 10000).Animation != "working" ||
+        PetState.Select(activePetData.RootElement, 10401).Animation != "idle")
+        throw new InvalidOperationException("桌宠近期活动状态应随时间失效");
+    if (Environment.GetEnvironmentVariable("AGENT_METER_TEST_PET_WINDOW") == "1")
+    {
+        Exception? windowError = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var petWindow = new PetWindow("mochi", new Point(-32000, -32000));
+                bool failed = false;
+                petWindow.RenderingFailed += () => failed = true;
+                petWindow.Show(); Application.DoEvents();
+                if (failed || !petWindow.IsHandleCreated) throw new InvalidOperationException("桌宠悬浮窗初始化失败");
+                petWindow.Close();
+            }
+            catch (Exception ex) { windowError = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA); thread.Start();
+        if (!thread.Join(TimeSpan.FromSeconds(15)) || windowError is not null)
+            throw new InvalidOperationException("桌宠悬浮窗检查失败", windowError);
+    }
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
@@ -227,7 +287,7 @@ try
         throw new InvalidOperationException("面板应适应较小工作区");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 1920, 1040)) != new Size(500, 760))
         throw new InvalidOperationException("足够大的工作区不应改变面板尺寸");
-    Console.WriteLine("账户开关、面板位置、主题、价格、提醒和报告导出检查通过");
+    Console.WriteLine("账户、面板、主题、价格、提醒、报告和桌宠基础检查通过");
 }
 finally
 {

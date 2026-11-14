@@ -65,6 +65,10 @@ THE SOFTWARE.
 
 Qoder SDK assets remain code from the user's installed Qoder application. Any local materialization is private runtime cache, excluded from this repository and package. They are not redistributed.
 
+## Windows 桌宠精灵图
+
+Windows 版内置的「麻薯」和「比特」精灵图来自上游 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的 `pets/presets/mochi` 和 `pets/presets/bit`。对应 `pet.json` 将素材标注为 CC0-1.0；清单和原图随源码保留，并作为资源嵌入 Windows 程序。
+
 ## Bundled runtime
 
 The macOS release bundles CPython and the PyInstaller bootloader. Their license texts are included in `Agent 用量.app/Contents/Resources/Licenses/`. PyInstaller's license includes an exception allowing distribution of applications built with its bootloader. Build dependencies are pinned in `requirements-build.txt`; no third-party installed application SDKs are bundled.

@@ -22,12 +22,17 @@ internal sealed class MeterContext : ApplicationContext
     readonly NotifyIcon tray;
     readonly Icon icon;
     readonly MeterWindow window;
+    readonly ToolStripMenuItem petVisible = new("显示桌宠");
+    readonly ToolStripMenuItem petMochi = new("麻薯"), petBit = new("比特");
+    PetPreferences petPreferences;
+    PetWindow? pet;
     bool quitting;
     public MeterContext(bool demo, bool windowed)
     {
         using var iconStream = typeof(Program).Assembly.GetManifestResourceStream("AgentMeter.Icon") ?? throw new InvalidOperationException("icon_missing");
         icon = new Icon(iconStream);
         window = new MeterWindow(demo, windowed) { Icon = icon };
+        petPreferences = demo ? PetPreferences.Default : PetPreferences.Load(AccountPreferences.DefaultDirectory);
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel(true));
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
@@ -70,6 +75,17 @@ internal sealed class MeterContext : ApplicationContext
             appearance.DropDownItems.Add(item);
         }
         menu.Items.Add(appearance);
+        if (!demo)
+        {
+            var pets = new ToolStripMenuItem("桌宠");
+            petVisible.Checked = petPreferences.Enabled;
+            petVisible.Click += (_, _) => ChangePet(petPreferences with { Enabled = !petPreferences.Enabled });
+            petMochi.Checked = petPreferences.Pack == "mochi"; petBit.Checked = petPreferences.Pack == "bit";
+            petMochi.Click += (_, _) => ChangePet(petPreferences with { Pack = "mochi" });
+            petBit.Click += (_, _) => ChangePet(petPreferences with { Pack = "bit" });
+            pets.DropDownItems.AddRange([petVisible, new ToolStripSeparator(), petMochi, petBit]);
+            menu.Items.Add(pets);
+        }
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
@@ -83,13 +99,75 @@ internal sealed class MeterContext : ApplicationContext
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
+        window.SnapshotUpdated += snapshot => pet?.SetSnapshot(snapshot);
         ShowPanel();
+        if (petPreferences.Enabled) StartPet();
         _ = window.RefreshData();
+    }
+    void ChangePet(PetPreferences next)
+    {
+        try { next.Save(AccountPreferences.DefaultDirectory); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { window.ShowNotice("无法保存桌宠设置"); return; }
+        bool restart = next.Enabled && (!petPreferences.Enabled || next.Pack != petPreferences.Pack);
+        petPreferences = next; petVisible.Checked = next.Enabled; petMochi.Checked = next.Pack == "mochi"; petBit.Checked = next.Pack == "bit";
+        if (!next.Enabled) { pet?.Dispose(); pet = null; }
+        else if (restart) StartPet();
+    }
+    void StartPet()
+    {
+        pet?.Dispose(); pet = null;
+        try
+        {
+            var screen = Screen.PrimaryScreen ?? Screen.FromPoint(Point.Empty);
+            Point location;
+            if (petPreferences.X.HasValue && petPreferences.Y.HasValue)
+            {
+                var saved = new Rectangle(petPreferences.X.Value, petPreferences.Y.Value, 240, 240);
+                var matching = Screen.AllScreens.FirstOrDefault(item => item.WorkingArea.IntersectsWith(saved));
+                if (matching is not null)
+                {
+                    var area = matching.WorkingArea;
+                    location = new Point(Math.Clamp(saved.X, area.Left, Math.Max(area.Left, area.Right - 240)),
+                                         Math.Clamp(saved.Y, area.Top, Math.Max(area.Top, area.Bottom - 240)));
+                }
+                else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
+            }
+            else location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, new Size(240, 240), Point.Empty, false);
+            var instance = new PetWindow(petPreferences.Pack, location);
+            instance.OpenRequested += () => ShowPanel(true);
+            instance.RefreshRequested += async () => await window.RefreshData();
+            instance.HideRequested += () => ChangePet(petPreferences with { Enabled = false });
+            instance.PositionChanged += position =>
+            {
+                var next = petPreferences with { X = position.X, Y = position.Y };
+                try { next.Save(AccountPreferences.DefaultDirectory); petPreferences = next; }
+                catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                { window.ShowNotice("无法保存桌宠位置"); }
+            };
+            instance.RenderingFailed += () =>
+            {
+                petPreferences = petPreferences with { Enabled = false }; petVisible.Checked = false;
+                try { petPreferences.Save(AccountPreferences.DefaultDirectory); }
+                catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+                window.ShowNotice("桌宠暂时无法显示");
+            };
+            pet = instance;
+            if (window.CurrentSnapshot is not null) instance.SetSnapshot(window.CurrentSnapshot);
+            instance.Show();
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or ArgumentException or System.ComponentModel.Win32Exception or System.Runtime.InteropServices.ExternalException)
+        {
+            pet?.Dispose(); pet = null; petPreferences = petPreferences with { Enabled = false }; petVisible.Checked = false;
+            try { petPreferences.Save(AccountPreferences.DefaultDirectory); }
+            catch (Exception saveError) when (saveError is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+            window.ShowNotice("桌宠暂时无法显示");
+        }
     }
     void ShowPanel(bool atCursor = false) { window.PlaceAtTray(atCursor); window.Show(); window.Activate(); }
     protected override void ExitThreadCore()
     {
-        quitting = true; tray.Visible = false; tray.Dispose(); if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
+        quitting = true; pet?.Dispose(); pet = null; tray.Visible = false; tray.Dispose(); if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
         base.ExitThreadCore();
     }
 }
@@ -121,6 +199,9 @@ internal sealed class MeterWindow : Form
     Size preferredSize;
     View view = View.Accounts;
     string? lastSnapshot;
+    public string? CurrentSnapshot => lastSnapshot;
+    public event Action<string>? SnapshotUpdated;
+    public void ShowNotice(string message) { if (!IsDisposed && !Disposing) status.Text = message; }
 
     public MeterWindow(bool demo, bool windowed)
     {
@@ -383,6 +464,7 @@ internal sealed class MeterWindow : Form
     void Render(JsonElement root)
     {
         lastSnapshot = root.GetRawText();
+        SnapshotUpdated?.Invoke(lastSnapshot);
         UpdateGauges(root);
         content.SuspendLayout();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();

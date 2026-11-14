@@ -1,0 +1,49 @@
+using System.Text.Json;
+
+namespace AgentMeter.Windows;
+
+/// <summary>只保存桌宠显示、形象和位置；默认不显示。</summary>
+internal sealed record PetPreferences(bool Enabled, string Pack, int? X, int? Y)
+{
+    public static PetPreferences Default => new(false, "mochi", null, null);
+    public static PetPreferences Load(string directory)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "pet-settings.json")));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("enabled", out var enabled) ||
+                enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+                !root.TryGetProperty("pack", out var pack) || pack.ValueKind != JsonValueKind.String ||
+                pack.GetString() is not ("mochi" or "bit")) return Default;
+            int? Coordinate(string name)
+            {
+                if (!root.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null) return null;
+                return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int n) && n is >= -100000 and <= 100000 ? n : null;
+            }
+            return new PetPreferences(enabled.GetBoolean(), pack.GetString()!, Coordinate("x"), Coordinate("y"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or System.Security.SecurityException) { return Default; }
+    }
+    public void Save(string directory)
+    {
+        if (Pack is not ("mochi" or "bit") || X is < -100000 or > 100000 || Y is < -100000 or > 100000)
+            throw new InvalidDataException("桌宠设置无效");
+        Directory.CreateDirectory(directory);
+        string temporary = Path.Combine(directory, Path.GetRandomFileName());
+        bool created = false;
+        try
+        {
+            using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                created = true; JsonSerializer.Serialize(file, new { enabled = Enabled, pack = Pack, x = X, y = Y });
+            }
+            File.Move(temporary, Path.Combine(directory, "pet-settings.json"), overwrite: true);
+        }
+        finally
+        {
+            try { if (created) File.Delete(temporary); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+        }
+    }
+}
