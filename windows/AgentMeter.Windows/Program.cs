@@ -293,6 +293,7 @@ internal sealed class MeterWindow : Form
                     (preferences.MiniMax && !profilesInvalid ? " --enable-minimax-account" : "") +
                     (accountInput is null ? "" : " --account-input");
                 var accountTask = RunCollector(arguments, accountCancellation.Token, accountInput);
+                accountInput = null;
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 JsonObject combined;
                 try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
@@ -362,6 +363,7 @@ internal sealed class MeterWindow : Form
                 await process.StandardInput.WriteAsync(accountInput.AsMemory(), timeout.Token);
                 await process.StandardInput.FlushAsync(timeout.Token);
                 process.StandardInput.Close();
+                accountInput = null;
             }
             await process.WaitForExitAsync(timeout.Token);
         }
