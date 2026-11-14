@@ -43,6 +43,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Backend failed' }
           $data = $result | ConvertFrom-Json
           if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }
+          $disabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $disabled.account.status -ne 'disabled' -or $disabled.other_accounts.'Kimi Code'.status -ne 'disabled' -or $disabled.other_accounts.'Claude Code'.status -ne 'disabled') { throw 'Account switches failed' }
       - name: Smoke test application startup
         shell: pwsh
         run: |
