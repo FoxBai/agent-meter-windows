@@ -1096,7 +1096,7 @@ internal sealed class MeterWindow : Form
         }
         else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
-            gauges.Controls.Add(new Label { Text = "暂无可用账户额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+            gauges.Controls.Add(new Label { Text = "暂无可用周期额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
         LayoutGauges();
     }
     void LayoutGauges()

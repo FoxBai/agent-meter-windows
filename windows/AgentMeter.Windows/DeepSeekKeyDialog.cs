@@ -14,10 +14,11 @@ internal sealed class DeepSeekKeyDialog : Form
         Text = "DeepSeek API 余额"; StartPosition = FormStartPosition.CenterParent;
         Font = new Font("Microsoft YaHei UI", 10F); ClientSize = new Size(560, 250); MinimumSize = new Size(480, 250);
         var description = new Label { Dock = DockStyle.Top, Height = 88, Padding = new Padding(16, 12, 16, 0),
-            Text = "仅查询 DeepSeek API 账户余额，不发送提示词。密钥保存在 Windows 凭据管理器；保存后启用查询。\n已保存的密钥不会显示在此窗口。" };
-        var fields = new Panel { Dock = DockStyle.Top, Height = 54, Padding = new Padding(16, 4, 16, 0) };
+            Text = "只查询 DeepSeek API 余额，不发送提示词。\n密钥保存在 Windows 凭据管理器；保存后启用查询，已保存密钥不会回显。" };
+        var fields = new Panel { Dock = DockStyle.Top, Height = 60, Padding = new Padding(16, 0, 16, 0) };
+        var label = new Label { Text = "API 密钥", Dock = DockStyle.Top, Height = 22 };
         secret.Dock = DockStyle.Top; secret.UseSystemPasswordChar = true; secret.MaxLength = 1280;
-        secret.PlaceholderText = "输入 DeepSeek API 密钥"; fields.Controls.Add(secret);
+        secret.PlaceholderText = "输入 DeepSeek API 密钥"; fields.Controls.Add(secret); fields.Controls.Add(label);
         message.Dock = DockStyle.Top; message.Height = 30; message.Padding = new Padding(16, 0, 16, 0); message.ForeColor = Color.Firebrick;
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
         var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
