@@ -8,6 +8,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from agent_meter.claude_code import collect_claude
@@ -18,6 +19,7 @@ from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
 from agent_meter.record_cache import records_cache
+from agent_meter.prices import PriceTable, estimate_source_cost
 from agent_meter.kimi_tokens import collect_kimi_tokens
 from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
@@ -179,6 +181,8 @@ def compact_history(result):
     """仅向面板传递显示字段；模型明细按用量排序并限制数量。"""
     compact = {"version": result["version"], "observed_at": result["observed_at"],
                "account": result["account"], "history": {}}
+    # 使用上游内置美元价格和固定回退汇率，不联网更新价格或把估算当作账单。
+    table = PriceTable("USD", {}, set())
     for name, item in result["history"].items():
         value = item.get("value")
         periods = value.get("periods", {}) if isinstance(value, dict) else {}
@@ -211,6 +215,25 @@ def compact_history(result):
                     selected[period]["groups_truncated"] = len(groups) > 20
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
                                     "value": {"periods": selected} if selected else None}
+        try:
+            estimated = estimate_source_cost(item, table)
+            cost = (estimated or {}).get("value", {}).get("periods", {}).get("today", {})
+            today = periods.get("today", {})
+            today_total = today.get("totals", {}).get("total_tokens") if isinstance(today, dict) else None
+            groups = today.get("groups") if isinstance(today, dict) else None
+            amount = Decimal(str(cost.get("amount")))
+            if (isinstance(today_total, int) and not isinstance(today_total, bool) and today_total > 0
+                    and isinstance(groups, list) and groups and amount.is_finite() and amount >= 0):
+                grouped = sum(row.get("total_tokens", 0) for row in groups if isinstance(row, dict)
+                              and isinstance(row.get("total_tokens"), int) and not isinstance(row.get("total_tokens"), bool))
+                peak_missing = any(table.peak_multipliers.get(table.match(model), 1) != 1
+                                   for model in cost.get("unsplit_models", []))
+                compact["history"][name]["estimate"] = {"amount_usd": format(amount, "f"),
+                    "partial": bool(item.get("status") == "partial" or cost.get("unmatched_models") or
+                                    grouped != today_total or peak_missing)}
+        except (TypeError, ValueError, KeyError, InvalidOperation, OverflowError):
+            # 价格估算失败不影响本机用量显示，也不把未知价格当作零。
+            pass
     compact["daily_trend"] = recent_daily_trend(result)
     compact["local_credits"] = {}
     for name, item in result.get("local_credits", {}).items():

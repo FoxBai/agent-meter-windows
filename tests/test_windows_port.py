@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -235,6 +236,25 @@ class WindowsBackendTests(unittest.TestCase):
                                               {'date': '2026-11-15', 'tokens': 10}])
         self.assertEqual(trend['sources'], 2)
         self.assertTrue(trend['incomplete'])
+
+    def test_estimated_cost_uses_known_groups_and_marks_unknown_models(self):
+        priced = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
+                  'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}
+        unknown = {'model': 'unknown-private-model', 'app': 'codex', 'fresh_input': 10,
+                   'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 10}
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {
+            'status': 'available', 'value': {'periods': {'today': {
+                'totals': {'total_tokens': 1000010}, 'groups': [priced, unknown]}}}}}}
+        item = backend.compact_history(source)['history']['Codex']
+        self.assertEqual(Decimal(item['estimate']['amount_usd']), Decimal('1.75'))
+        self.assertTrue(item['estimate']['partial'])
+        self.assertNotIn('unknown-private-model', json.dumps(item))
+        source['history']['Codex']['value']['periods']['today']['groups'] = [unknown]
+        self.assertNotIn('estimate', backend.compact_history(source)['history']['Codex'])
+        deepseek = dict(priced, model='deepseek-flash')
+        source['history']['Codex']['value']['periods']['today'] = {
+            'totals': {'total_tokens': 1000000}, 'groups': [deepseek]}
+        self.assertTrue(backend.compact_history(source)['history']['Codex']['estimate']['partial'])
 
     def test_account_only_does_not_start_history_scan(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \

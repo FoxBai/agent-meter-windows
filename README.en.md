@@ -28,11 +28,12 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
+- **API-equivalent estimates** — shows today's USD estimate for models matched to the upstream built-in price snapshot. Missing prices, breakdowns or peak/off-peak information are flagged. Prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Price editing and live updates are not yet available in the Windows interface.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
 ## Data sources
 
-The table describes the current `main` branch. The published alpha.1 package predates appearance options, account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking and trend chart.
+The table describes the current `main` branch. The published alpha.1 package predates appearance options, account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking, trend chart and price estimates.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
