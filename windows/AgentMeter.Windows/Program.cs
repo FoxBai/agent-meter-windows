@@ -1356,20 +1356,25 @@ internal sealed class MeterWindow : Form
     {
         int shown = Math.Min(rows.Count, 40);
         if (shown == 0) return;
-        var box = new RoundedCard(theme) { Height = 45 + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = provider, AutoSize = true, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(15, 11) });
+        var identity = ProviderStyle.For(provider);
+        var box = new RoundedCard(theme, identity.Color) { Height = 62 + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 13), Size = new Size(34, 34) });
+        var heading = new Label { Text = identity.DisplayName, AutoEllipsis = true, Height = 25,
+            Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(60, 19) };
+        box.Controls.Add(heading);
+        box.Resize += (_, _) => heading.Width = Math.Max(0, box.ClientSize.Width - heading.Left - 16);
         for (int index = 0; index < shown; index++)
         {
             var row = rows[index];
-            int top = 43 + index * 70;
+            int top = 59 + index * 70;
             string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
             if (label.Length == 0) label = "额度窗口";
             var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
             double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
             var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
-                Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Primary, Location = new Point(0, top) };
+                Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = remaining.HasValue ? MeterBar.ValueColor(theme, remaining.Value) : Muted, Location = new Point(0, top) };
             var note = new Label { Text = row.Reset, AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
-            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 5 };
+            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 7 };
             box.Controls.AddRange([name, amount, note, bar]);
             box.Resize += (_, _) =>
             {
@@ -1444,7 +1449,12 @@ internal sealed class MeterWindow : Form
 internal sealed class RoundedCard : Panel
 {
     readonly VisualTheme theme;
-    public RoundedCard(VisualTheme theme) { this.theme = theme; DoubleBuffered = true; }
+    readonly Color? providerColor;
+    public RoundedCard(VisualTheme theme, Color? providerColor = null) { this.theme = theme; this.providerColor = providerColor; DoubleBuffered = true; }
+    static Color Mix(Color original, Color tint, double weight) => Color.FromArgb(
+        (int)Math.Round(original.R * (1 - weight) + tint.R * weight),
+        (int)Math.Round(original.G * (1 - weight) + tint.G * weight),
+        (int)Math.Round(original.B * (1 - weight) + tint.B * weight));
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
@@ -1459,7 +1469,9 @@ internal sealed class RoundedCard : Panel
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         if (ClientRectangle.Width <= 0 || ClientRectangle.Height <= 0) return;
-        using var fill = new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle, theme.Card, theme.CardEnd, 90F);
+        Color start = providerColor.HasValue ? Mix(theme.Card, providerColor.Value, theme.Light ? .07 : .11) : theme.Card;
+        Color end = providerColor.HasValue ? Mix(theme.CardEnd, providerColor.Value, theme.Light ? .025 : .035) : theme.CardEnd;
+        using var fill = new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle, start, end, 90F);
         e.Graphics.FillRectangle(fill, ClientRectangle);
     }
     protected override void OnPaint(PaintEventArgs e)
@@ -1467,7 +1479,7 @@ internal sealed class RoundedCard : Panel
         base.OnPaint(e);
         if (theme.Minimal || Width < 22 || Height < 22) return;
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using var border = new Pen(theme.Border);
+        using var border = new Pen(providerColor.HasValue ? Mix(theme.Border, providerColor.Value, theme.Light ? .25 : .38) : theme.Border);
         using var path = new System.Drawing.Drawing2D.GraphicsPath();
         int r = 20, w = Width - 1, h = Height - 1;
         path.AddArc(0, 0, r, r, 180, 90); path.AddArc(w - r, 0, r, r, 270, 90);
@@ -1478,9 +1490,41 @@ internal sealed class RoundedCard : Panel
 internal sealed class MeterBar : Control
 {
     readonly VisualTheme theme;
-    public MeterBar(VisualTheme theme) { this.theme = theme; }
+    public MeterBar(VisualTheme theme)
+    {
+        this.theme = theme;
+        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+        BackColor = Color.Transparent; DoubleBuffered = true;
+    }
     public double Value { get; set; }
-    protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(theme.Border); using var brush = new SolidBrush(Value < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(244, 136, 116)) : theme.Accent); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
+    public static Color ValueColor(VisualTheme theme, double value) => value < 20
+        ? (theme.Light ? Color.FromArgb(174, 42, 63) : Color.FromArgb(255, 111, 128))
+        : value < 50 ? (theme.Light ? Color.FromArgb(153, 88, 0) : Color.FromArgb(255, 177, 70)) : theme.Accent;
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if (Width <= 0 || Height <= 0) return;
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var track = new SolidBrush(theme.Border);
+        using var path = Pill(new RectangleF(0, 0, Width, Height));
+        e.Graphics.FillPath(track, path);
+        float length = (float)(Width * Math.Clamp(Value, 0, 100) / 100);
+        if (length <= 0) return;
+        Color end = ValueColor(theme, Value);
+        Color start = theme.Minimal ? end : Value < 50 ? (theme.Light ? Color.FromArgb(181, 55, 67) : Color.FromArgb(255, 113, 109))
+                                 : (theme.Light ? Color.FromArgb(32, 110, 150) : Color.FromArgb(53, 192, 231));
+        var rectangle = new RectangleF(0, 0, Math.Max(1, length), Height);
+        using var fill = new System.Drawing.Drawing2D.LinearGradientBrush(rectangle, start, end, 0F);
+        using var progress = Pill(rectangle);
+        e.Graphics.FillPath(fill, progress);
+    }
+    static System.Drawing.Drawing2D.GraphicsPath Pill(RectangleF rectangle)
+    {
+        float diameter = Math.Min(rectangle.Height, rectangle.Width);
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddArc(rectangle.X, rectangle.Y, diameter, rectangle.Height, 90, 180);
+        path.AddArc(rectangle.Right - diameter, rectangle.Y, diameter, rectangle.Height, 270, 180);
+        path.CloseFigure(); return path;
+    }
 }
 internal sealed class QuotaGauge : Control
 {

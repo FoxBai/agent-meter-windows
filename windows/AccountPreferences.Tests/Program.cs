@@ -10,6 +10,11 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 
 try
 {
+    var namedProvider = ProviderStyle.For("MINIMAX CODE · 家庭账户");
+    if (namedProvider.DisplayName != "MiniMax Code · 家庭账户" || namedProvider.Initial != "M" ||
+        ProviderStyle.For("unknown service").DisplayName != "unknown service" ||
+        ProviderStyle.For("CODEX").Color == ProviderStyle.For("CLAUDE CODE").Color)
+        throw new InvalidOperationException("服务标识或账户别名显示不正确");
     var cardSnapshot = JsonNode.Parse("""{"account":{"status":"available","private":"SECRET_MARKER","quota":{"status":"available","unused":"SECRET_MARKER","value":[{"bucket":"codex","window_minutes":300,"remaining_percent":55,"resets_at":{"epoch_seconds":1800003600,"extra":"SECRET_MARKER"},"private":"SECRET_MARKER"}]}},"other_accounts":{"MiniMax Code":[{"label":"演示账户","status":"available","key":"SECRET_MARKER","quota":{"value":[{"bucket":"5h","remaining_percent":50,"resets_at":{"epoch_seconds":1800003600}}]}}],"unknown":{"secret":"SECRET_MARKER"}}}""")!.AsObject();
     string cardInput = CardInput.Create(cardSnapshot);
     if (cardInput.Contains("SECRET_MARKER", StringComparison.Ordinal)) throw new InvalidOperationException("卡册输入包含多余字段");
