@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace AgentMeter.Windows;
 
 /// <summary>只保存账户查询开关，不保存凭据或账户数据。</summary>
-internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude)
+internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bool MiniMax = false)
 {
     public static AccountPreferences Enabled => new(true, true, true);
     public static AccountPreferences Disabled => new(false, false, false);
@@ -16,7 +16,9 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude)
         {
             using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "preferences.json")));
             var root = document.RootElement;
-            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"));
+            bool minimax = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("minimax", out _)
+                ? ReadBoolean(root, "minimax") : false;
+            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"), minimax);
         }
         catch (FileNotFoundException) { return Enabled; }
         catch (DirectoryNotFoundException) { return Enabled; }
@@ -42,7 +44,7 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude)
         bool created = false;
         try
         {
-            var values = new Dictionary<string, bool> { ["codex"] = Codex, ["kimi"] = Kimi, ["claude"] = Claude };
+            var values = new Dictionary<string, bool> { ["codex"] = Codex, ["kimi"] = Kimi, ["claude"] = Claude, ["minimax"] = MiniMax };
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 created = true;

@@ -26,6 +26,7 @@ from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
 from agent_meter.opencode_tokens import collect_opencode_tokens, readonly_database as opencode_database
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
+from agent_meter.minimax import collect_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 
 
@@ -65,14 +66,25 @@ def claude_quota(home, now):
     return {"status": source["status"], "quota": source["metrics"]["quota"]}
 
 
-def account_sources(home, now, disabled_accounts=frozenset()):
-    with ThreadPoolExecutor(max_workers=3) as executor:
+def minimax_quota(home, now):
+    # 仅在用户启用时读取已有环境变量；不保存密钥，也不执行外部脚本。
+    key = os.environ.get("MINIMAX_TOKEN_PLAN_KEY")
+    if not key:
+        raise SourceError("minimax_credential_not_connected")
+    source = collect_minimax(home, now, timeout=12, app_key=key)
+    return {"status": source["status"], "quota": source["metrics"]["quota"]}
+
+
+def account_sources(home, now, disabled_accounts=frozenset(), enable_minimax=False):
+    with ThreadPoolExecutor(max_workers=4) as executor:
         jobs = {"codex": lambda: quota(codex_binary(), now),
-                "kimi": lambda: kimi_quota(home, now), "claude": lambda: claude_quota(home, now)}
-        futures = {name: executor.submit(guarded, job) for name, job in jobs.items() if name not in disabled_accounts}
+                "kimi": lambda: kimi_quota(home, now), "claude": lambda: claude_quota(home, now),
+                "minimax": lambda: minimax_quota(home, now)}
+        futures = {name: executor.submit(guarded, job) for name, job in jobs.items()
+                   if name not in disabled_accounts and (name != "minimax" or enable_minimax)}
         def result(name):
             return futures[name].result() if name in futures else {"status": "disabled", "reason": "disabled_by_user"}
-        return result("codex"), {"Kimi Code": result("kimi"), "Claude Code": result("claude")}
+        return result("codex"), {"Kimi Code": result("kimi"), "Claude Code": result("claude"), "MiniMax Code": result("minimax")}
 
 
 def histories(home, now):
@@ -120,18 +132,18 @@ def guarded(fn):
         return {"status": "error", "reason": "read_failed", "value": None}
 
 
-def collect(local_only=False, home=None, account_only=False, disabled_accounts=frozenset()):
+def collect(local_only=False, home=None, account_only=False, disabled_accounts=frozenset(), enable_minimax=False):
     now = time.time()
     home = Path(home) if home else Path.home()
     if account_only:
-        codex, other_accounts = account_sources(home, now, disabled_accounts)
+        codex, other_accounts = account_sources(home, now, disabled_accounts, enable_minimax)
         return {"version": 1, "observed_at": int(now),
                 "account": codex, "other_accounts": other_accounts, "history": {}}
     jobs = histories(home, now)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {name: executor.submit(guarded, fn) for name, fn in jobs.items()}
         qoder = executor.submit(guarded, lambda: metric(collect_qoder_credits(home / ".qoder-cn" / "projects", now)))
-        account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts)
+        account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts, enable_minimax)
         account_values = None if account is None else account.result()
         return {"version": 1, "observed_at": int(now),
                 "account": {"status": "disabled", "reason": "local_only"} if account is None else account_values[0],
@@ -379,6 +391,7 @@ def main():
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
+    parser.add_argument("--enable-minimax-account", action="store_true")
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
@@ -388,7 +401,7 @@ def main():
         return
     disabled = frozenset(provider for provider in ("codex", "kimi", "claude")
                          if getattr(args, "disable_" + provider + "_account"))
-    print(json.dumps(collect(args.local_only, args.home, args.account_only, disabled), ensure_ascii=False, separators=(",", ":")))
+    print(json.dumps(collect(args.local_only, args.home, args.account_only, disabled, args.enable_minimax_account), ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

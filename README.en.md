@@ -21,12 +21,13 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 ## What it does
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
-- **Account switches** — enable or disable Codex, Kimi and Claude account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials.
+- **Account switches** — enable or disable Codex, Kimi, Claude and MiniMax account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax is off by default.
 - **Low-quota alerts** — optionally enable Windows notifications below 20% remaining; repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
+- **MiniMax Code account** — the main branch can use the existing `MINIMAX_TOKEN_PLAN_KEY` environment variable after the user enables the lookup. `MINIMAX_REGION` selects `cn` or `global`; restart the app after changing environment variables. Synthetic tests only; not in Alpha 2.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
 - **Calendar reports** — the main branch adds local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. This page is not in Alpha 2, and the export interaction still needs device testing.
@@ -35,7 +36,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 
 ## Data sources
 
-The table describes the current `main` branch. The Alpha 2 preview includes these data sources; the calendar report page was added later. See subsequent release notes for other changes.
+The table describes the current `main` branch. MiniMax account lookup and calendar reports were added after Alpha 2. See subsequent release notes for other changes.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
@@ -47,7 +48,8 @@ The table describes the current `main` branch. The Alpha 2 preview includes thes
 | DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
 | Kimi Code / legacy Kimi CLI | Existing Kimi Code local server (synthetic validation) | Local session logs |
 | OpenCode | Not yet | Local v1 message database; v2 records are flagged as incomplete |
-| MiniMax Code, MiMo Code, DevECo | Not yet | Local usage databases |
+| MiniMax Code | Environment-variable key, explicitly enabled (synthetic validation) | Local usage database |
+| MiMo Code, DevECo | Not yet | Local usage databases |
 | Qoder CN | Not yet | Local credits consumed, not token usage or account balance |
 
 The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode's v2 messages are not yet counted. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
@@ -96,7 +98,7 @@ These are targeted tests, not a claim that every upstream macOS feature is cover
 
 ## Privacy and data
 
-The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Account lookups are enabled by default and can be disabled individually through the tray menu; switch states are saved without credentials in `%LOCALAPPDATA%\AgentMeter\preferences.json`. Custom prices and appearance are stored as `prices.json` and `appearance.json` in the same directory; a malformed price file hides estimates and shows a notice. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh, modify or save that token. Disabling a source attempts to stop an ongoing account lookup; a request already sent cannot be recalled. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
+The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex, Kimi and Claude account lookups default to on; MiniMax defaults to off. Switch states are saved without credentials in `%LOCALAPPDATA%\AgentMeter\preferences.json`. Custom prices and appearance are stored as `prices.json` and `appearance.json` in the same directory; a malformed price file hides estimates and shows a notice. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh, modify or save that token. If MiniMax is enabled, the app reads the key from the environment and sends it over HTTPS to the selected MiniMax region's usage endpoint without saving it. Disabling a source attempts to stop an ongoing account lookup; a request already sent cannot be recalled. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
 
 This Windows port is independent of the optional reward-claiming features in the upstream macOS application; those controls are not exposed by the Windows interface. Check the code and the provider's own policies if your environment has restrictions on local session access.
 

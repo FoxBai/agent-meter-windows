@@ -24,6 +24,27 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_minimax_account_is_opt_in_and_uses_fixed_service(self):
+        payload = {'base_resp': {'status_code': 0}, 'model_remains': [{'model_name': 'general',
+            'current_interval_remaining_percent': 65, 'end_time': 1800003600000}]}
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {
+                'MINIMAX_TOKEN_PLAN_KEY': 'synthetic-test-key', 'MINIMAX_REGION': 'cn'}), \
+             patch('agent_meter.minimax.get_json', return_value=payload) as request:
+            off = backend.collect(account_only=True, home=root, disabled_accounts=frozenset({'codex', 'kimi', 'claude'}))
+            self.assertEqual(off['other_accounts']['MiniMax Code']['status'], 'disabled')
+            request.assert_not_called()
+            on = backend.collect(account_only=True, home=root, disabled_accounts=frozenset({'codex', 'kimi', 'claude'}), enable_minimax=True)
+            self.assertEqual(on['other_accounts']['MiniMax Code']['quota']['value'][0]['remaining_percent'], 65)
+            self.assertEqual(request.call_args.args[0], 'https://www.minimax.cn/v1/token_plan/remains')
+            self.assertNotIn('synthetic-test-key', json.dumps(on))
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {
+                'MINIMAX_TOKEN_PLAN_KEY': 'synthetic-test-key', 'MINIMAX_REGION': 'unexpected'}), \
+             patch('agent_meter.minimax.get_json') as request:
+            with self.assertRaises(SourceError) as error:
+                backend.minimax_quota(Path(root), 1800000000)
+            self.assertEqual(error.exception.code, 'invalid_minimax_region')
+            request.assert_not_called()
+
     def test_claude_quota_uses_configured_file_and_fixed_service_without_exposing_token(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as config:
             token = 'synthetic-test-token'
@@ -305,7 +326,7 @@ class WindowsBackendTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['price_status'], 'invalid')
 
     def test_account_only_does_not_start_history_scan(self):
-        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': '', 'CLAUDE_CONFIG_DIR': ''}), \
              patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \
              patch.object(backend, 'codex_binary', return_value='codex.exe'), \
              patch.object(backend, 'quota', return_value={'status': 'available'}):
@@ -336,6 +357,14 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(output['account']['status'], 'disabled')
         self.assertEqual(output['other_accounts']['Kimi Code']['status'], 'disabled')
         self.assertEqual(output['other_accounts']['Claude Code']['status'], 'disabled')
+        self.assertEqual(output['other_accounts']['MiniMax Code']['status'], 'disabled')
+        with tempfile.TemporaryDirectory() as root:
+            env = dict(os.environ, MINIMAX_TOKEN_PLAN_KEY='')
+            result = subprocess.run([sys.executable, '-m', 'windows.backend', '--account-only', '--home', root,
+                                     '--disable-codex-account', '--disable-kimi-account', '--disable-claude-account',
+                                     '--enable-minimax-account'], env=env, check=True, capture_output=True,
+                                    text=True, encoding='utf-8', timeout=15)
+        self.assertEqual(json.loads(result.stdout)['other_accounts']['MiniMax Code']['reason'], 'minimax_credential_not_connected')
 
     def test_missing_histories_are_not_zero(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CODEX_HOME': '', 'CLAUDE_CONFIG_DIR': '', 'DSH_HOME': '', 'KIMI_CODE_HOME': '', 'XDG_DATA_HOME': '', 'OPENCODE_DB': ''}):

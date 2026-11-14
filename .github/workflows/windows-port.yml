@@ -45,6 +45,10 @@ jobs:
           if ($data.account.status -ne 'disabled' -or $data.history.Codex.reason -ne 'codex_sessions_not_found') { throw 'Unexpected isolated result' }
           $disabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $disabled.account.status -ne 'disabled' -or $disabled.other_accounts.'Kimi Code'.status -ne 'disabled' -or $disabled.other_accounts.'Claude Code'.status -ne 'disabled') { throw 'Account switches failed' }
+          $env:MINIMAX_TOKEN_PLAN_KEY = ''
+          $env:MINIMAX_REGION = 'cn'
+          $enabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $enabled.other_accounts.'MiniMax Code'.reason -ne 'minimax_credential_not_connected') { throw 'MiniMax opt-in check failed' }
       - name: Smoke test application startup
         shell: pwsh
         run: |

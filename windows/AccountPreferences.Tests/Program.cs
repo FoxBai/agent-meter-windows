@@ -21,6 +21,10 @@ try
     AccountPreferences.Enabled.Save(directory);
     if (AccountPreferences.Load(directory) != AccountPreferences.Enabled)
         throw new InvalidOperationException("账户开关未正确覆盖");
+    File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
+    var oldPreferences = AccountPreferences.Load(directory);
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax)
+        throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
     if (VisualThemes.All.Count != 7 || VisualThemes.All.Select(t => t.Id).Distinct().Count() != 7)
         throw new InvalidOperationException("界面风格列表不完整");
     VisualThemes.Save(directory, VisualThemes.Find("porcelain"));
@@ -86,6 +90,11 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(kimi, now).Single().Contains("月度总额"))
         throw new InvalidOperationException("Kimi 月度额度提醒应显示中文名称");
+    var minimax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+        ["MiniMax Code"] = new { status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } }
+    } });
+    if (!new QuotaAlerts().Evaluate(minimax, now).Single().Contains("5 小时"))
+        throw new InvalidOperationException("MiniMax 额度提醒应显示中文周期");
     using var reportData = JsonDocument.Parse("""
     {"account":{"credential":"synthetic-secret"},"history":{"message":"synthetic-private-text"},"calendar_report":{"incomplete":true,"periods":{
       "week":{"previous_start":"2025-12-22","current_start":"2025-12-29","current_end":"2026-01-01","previous_tokens":50,"current_tokens":300},
