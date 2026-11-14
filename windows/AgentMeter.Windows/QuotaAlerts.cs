@@ -16,7 +16,17 @@ internal sealed class QuotaAlerts
         var other = Field(snapshot, "other_accounts");
         Inspect("Kimi", Field(other, "Kimi Code"), messages, now);
         Inspect("Claude", Field(other, "Claude Code"), messages, now);
-        Inspect("MiniMax", Field(other, "MiniMax Code"), messages, now);
+        var minimax = Field(other, "MiniMax Code");
+        if (minimax.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var account in minimax.EnumerateArray())
+            {
+                string label = Text(account, "label");
+                if (label.Length is < 1 or > 32 || label.Any(char.IsControl)) continue;
+                Inspect("MiniMax · " + label, account, messages, now);
+            }
+        }
+        else Inspect("MiniMax", minimax, messages, now);
         return messages;
     }
     void Inspect(string provider, JsonElement account, List<string> messages, DateTimeOffset now)

@@ -15,7 +15,7 @@ from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, 
 from agent_meter.claude_code import collect_claude
 from agent_meter.codex import normalize_limits
 from agent_meter.model import DISPLAY_ZONE, SourceError, metric
-from agent_meter.transport import CodexRPC
+from agent_meter.transport import CodexRPC, get_json
 from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
@@ -26,7 +26,7 @@ from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
 from agent_meter.opencode_tokens import collect_opencode_tokens, readonly_database as opencode_database
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
-from agent_meter.minimax import collect_minimax
+from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 
 
@@ -75,16 +75,49 @@ def minimax_quota(home, now):
     return {"status": source["status"], "quota": source["metrics"]["quota"]}
 
 
-def account_sources(home, now, disabled_accounts=frozenset(), enable_minimax=False):
+def validate_account_input(data):
+    """只接受本进程标准输入中的受限账户数据，不记录或返回密钥。"""
+    if not isinstance(data, dict) or set(data) != {"minimax_accounts"} or not isinstance(data["minimax_accounts"], list):
+        raise ValueError("invalid account input")
+    accounts = data["minimax_accounts"]
+    if len(accounts) > 5:
+        raise ValueError("too many accounts")
+    seen = set()
+    for item in accounts:
+        if not isinstance(item, dict) or set(item) != {"label", "region", "key"}:
+            raise ValueError("invalid account")
+        label, region, key = item["label"], item["region"], item["key"]
+        if (not isinstance(label, str) or not 0 < len(label.strip()) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in label)
+                or label.casefold() in seen or region not in {"cn", "global"}
+                or (key is not None and (not isinstance(key, str) or not 0 < len(key) <= 1280 or any(ord(c) < 32 or ord(c) == 127 for c in key)))):
+            raise ValueError("invalid account")
+        seen.add(label.casefold())
+    return accounts
+
+
+def minimax_saved_quota(account, now):
+    key = account["key"]
+    if key is None:
+        raise SourceError("minimax_vault_credential_missing")
+    domain = "www.minimax.cn" if account["region"] == "cn" else "www.minimax.io"
+    source = normalize_minimax(get_json("https://" + domain + "/v1/token_plan/remains", key, timeout=12), now)
+    return {"status": source["status"], "quota": source["metrics"]["quota"]}
+
+
+def account_sources(home, now, disabled_accounts=frozenset(), enable_minimax=False, saved_accounts=None):
     with ThreadPoolExecutor(max_workers=4) as executor:
         jobs = {"codex": lambda: quota(codex_binary(), now),
                 "kimi": lambda: kimi_quota(home, now), "claude": lambda: claude_quota(home, now),
                 "minimax": lambda: minimax_quota(home, now)}
         futures = {name: executor.submit(guarded, job) for name, job in jobs.items()
-                   if name not in disabled_accounts and (name != "minimax" or enable_minimax)}
+                   if name not in disabled_accounts and (name != "minimax" or (enable_minimax and saved_accounts is None))}
+        saved = [(item["label"], executor.submit(guarded, lambda account=item: minimax_saved_quota(account, now)))
+                 for item in (saved_accounts or [])] if enable_minimax else []
         def result(name):
             return futures[name].result() if name in futures else {"status": "disabled", "reason": "disabled_by_user"}
-        return result("codex"), {"Kimi Code": result("kimi"), "Claude Code": result("claude"), "MiniMax Code": result("minimax")}
+        minimax = ([{"label": label, **future.result()} for label, future in saved] if saved else
+                   {"status": "unavailable", "reason": "minimax_no_saved_accounts"}) if enable_minimax and saved_accounts is not None else result("minimax")
+        return result("codex"), {"Kimi Code": result("kimi"), "Claude Code": result("claude"), "MiniMax Code": minimax}
 
 
 def histories(home, now):
@@ -132,18 +165,18 @@ def guarded(fn):
         return {"status": "error", "reason": "read_failed", "value": None}
 
 
-def collect(local_only=False, home=None, account_only=False, disabled_accounts=frozenset(), enable_minimax=False):
+def collect(local_only=False, home=None, account_only=False, disabled_accounts=frozenset(), enable_minimax=False, saved_accounts=None):
     now = time.time()
     home = Path(home) if home else Path.home()
     if account_only:
-        codex, other_accounts = account_sources(home, now, disabled_accounts, enable_minimax)
+        codex, other_accounts = account_sources(home, now, disabled_accounts, enable_minimax, saved_accounts)
         return {"version": 1, "observed_at": int(now),
                 "account": codex, "other_accounts": other_accounts, "history": {}}
     jobs = histories(home, now)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {name: executor.submit(guarded, fn) for name, fn in jobs.items()}
         qoder = executor.submit(guarded, lambda: metric(collect_qoder_credits(home / ".qoder-cn" / "projects", now)))
-        account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts, enable_minimax)
+        account = None if local_only else executor.submit(account_sources, home, now, disabled_accounts, enable_minimax, saved_accounts)
         account_values = None if account is None else account.result()
         return {"version": 1, "observed_at": int(now),
                 "account": {"status": "disabled", "reason": "local_only"} if account is None else account_values[0],
@@ -392,6 +425,7 @@ def main():
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
     parser.add_argument("--enable-minimax-account", action="store_true")
+    parser.add_argument("--account-input", action="store_true")
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
@@ -401,7 +435,20 @@ def main():
         return
     disabled = frozenset(provider for provider in ("codex", "kimi", "claude")
                          if getattr(args, "disable_" + provider + "_account"))
-    print(json.dumps(collect(args.local_only, args.home, args.account_only, disabled, args.enable_minimax_account), ensure_ascii=False, separators=(",", ":")))
+    saved_accounts = None
+    if args.account_input:
+        if not args.account_only or not args.enable_minimax_account:
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("account input too large")
+            saved_accounts = validate_account_input(json.loads(raw.lstrip("\ufeff")))
+        except (ValueError, TypeError):
+            # 不输出输入数据、密钥或异常原文。
+            raise SystemExit(2) from None
+    print(json.dumps(collect(args.local_only, args.home, args.account_only, disabled, args.enable_minimax_account, saved_accounts), ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

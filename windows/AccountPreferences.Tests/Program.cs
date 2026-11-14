@@ -37,6 +37,52 @@ try
     var oldPreferences = AccountPreferences.Load(directory);
     if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
+    var fakeVault = new FakeMiniMaxVault();
+    if (MiniMaxAccountInput.Build(directory, fakeVault) is not null)
+        throw new InvalidOperationException("没有账户列表时应保留环境变量模式");
+    var account = MiniMaxProfiles.Add(directory, "测试账户", "cn", "synthetic-secret", fakeVault);
+    if (MiniMaxProfiles.Load(directory).Single() != account || fakeVault.Read(account.Id) != "synthetic-secret" ||
+        File.ReadAllText(Path.Combine(directory, "minimax-accounts.json")).Contains("synthetic-secret"))
+        throw new InvalidOperationException("账户信息与凭据未正确分离");
+    using (var input = JsonDocument.Parse(MiniMaxAccountInput.Build(directory, fakeVault)!))
+    {
+        var item = input.RootElement.GetProperty("minimax_accounts")[0];
+        if (item.GetProperty("label").GetString() != "测试账户" || item.GetProperty("key").GetString() != "synthetic-secret")
+            throw new InvalidOperationException("账户标准输入内容不正确");
+    }
+    fakeVault.Write(account.Id, "bad\nvalue");
+    using (var input = JsonDocument.Parse(MiniMaxAccountInput.Build(directory, fakeVault)!))
+        if (input.RootElement.GetProperty("minimax_accounts")[0].GetProperty("key").ValueKind != JsonValueKind.Null)
+            throw new InvalidOperationException("损坏的凭据不应传递给后端");
+    fakeVault.Write(account.Id, "synthetic-secret");
+    fakeVault.FailRead = true;
+    using (var input = JsonDocument.Parse(MiniMaxAccountInput.Build(directory, fakeVault)!))
+        if (input.RootElement.GetProperty("minimax_accounts")[0].GetProperty("key").ValueKind != JsonValueKind.Null)
+            throw new InvalidOperationException("凭据读取失败应标为缺失");
+    fakeVault.FailRead = false;
+    try { MiniMaxProfiles.Add(directory, "测试账户", "cn", "synthetic-duplicate", fakeVault); throw new InvalidOperationException("重复账户名称应被拒绝"); }
+    catch (InvalidDataException) { }
+    fakeVault.FailWrite = true;
+    try { MiniMaxProfiles.Add(directory, "另一个账户", "global", "synthetic-other", fakeVault); throw new InvalidOperationException("模拟保存失败未生效"); }
+    catch (IOException) { }
+    if (MiniMaxProfiles.Load(directory).Count != 1) throw new InvalidOperationException("凭据写入失败后应回滚账户列表");
+    fakeVault.FailWrite = false; fakeVault.FailDelete = true;
+    try { MiniMaxProfiles.Remove(directory, account.Id, fakeVault); throw new InvalidOperationException("模拟删除失败未生效"); }
+    catch (IOException) { }
+    if (MiniMaxProfiles.Load(directory).Count != 1) throw new InvalidOperationException("凭据删除失败时不能隐藏账户");
+    fakeVault.FailDelete = false; MiniMaxProfiles.Remove(directory, account.Id, fakeVault);
+    if (MiniMaxProfiles.Load(directory).Count != 0 || fakeVault.Read(account.Id) is not null)
+        throw new InvalidOperationException("账户和凭据应同时删除");
+    using (var input = JsonDocument.Parse(MiniMaxAccountInput.Build(directory, fakeVault)!))
+        if (input.RootElement.GetProperty("minimax_accounts").GetArrayLength() != 0)
+            throw new InvalidOperationException("清空账户后不应回退到环境变量");
+    var firstAccount = MiniMaxProfiles.Add(directory, "甲", "cn", "synthetic-a", fakeVault);
+    var secondAccount = MiniMaxProfiles.Add(directory, "乙", "global", "synthetic-b", fakeVault);
+    using (var input = JsonDocument.Parse(MiniMaxAccountInput.Build(directory, fakeVault)!))
+        if (input.RootElement.GetProperty("minimax_accounts").GetArrayLength() != 2)
+            throw new InvalidOperationException("多个账户未正确隔离");
+    MiniMaxProfiles.Remove(directory, firstAccount.Id, fakeVault);
+    MiniMaxProfiles.Remove(directory, secondAccount.Id, fakeVault);
     if (VisualThemes.All.Count != 7 || VisualThemes.All.Select(t => t.Id).Distinct().Count() != 7)
         throw new InvalidOperationException("界面风格列表不完整");
     VisualThemes.Save(directory, VisualThemes.Find("porcelain"));
@@ -107,6 +153,14 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(minimax, now).Single().Contains("5 小时"))
         throw new InvalidOperationException("MiniMax 额度提醒应显示中文周期");
+    var multiMiniMax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+        ["MiniMax Code"] = new[] {
+            new { label = "甲", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } },
+            new { label = "乙", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 15 } } } }
+        }
+    } });
+    if (new QuotaAlerts().Evaluate(multiMiniMax, now).Count != 2)
+        throw new InvalidOperationException("不同 MiniMax 账户的提醒应独立计数");
     using var quotaData = JsonDocument.Parse("""
     {"quota":{"value":[{"bucket":"seven_day_opus","window_minutes":10080,"remaining_percent":5},
       {"bucket":"seven_day","window_minutes":10080,"remaining_percent":46},
@@ -178,4 +232,15 @@ try
 finally
 {
     if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+}
+
+internal sealed class FakeMiniMaxVault : IMiniMaxVault
+{
+    readonly Dictionary<Guid, string> values = new();
+    public bool FailWrite { get; set; }
+    public bool FailDelete { get; set; }
+    public bool FailRead { get; set; }
+    public void Write(Guid id, string secret) { if (FailWrite) throw new IOException("synthetic write failure"); values[id] = secret; }
+    public string? Read(Guid id) { if (FailRead) throw new IOException("synthetic read failure"); return values.GetValueOrDefault(id); }
+    public void Delete(Guid id) { if (FailDelete) throw new IOException("synthetic delete failure"); values.Remove(id); }
 }

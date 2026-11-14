@@ -47,6 +47,13 @@ internal sealed class MeterContext : ApplicationContext
                 using var editor = new PriceEditor(AccountPreferences.DefaultDirectory);
                 if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshData();
             });
+            menu.Items.Add("管理 MiniMax 账户", null, async (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new MiniMaxAccountsDialog(AccountPreferences.DefaultDirectory);
+                editor.ShowDialog(window);
+                if (editor.Changed) await window.RefreshAfterAccountChange();
+            });
             var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
             menu.Items.Add(alerts);
@@ -200,6 +207,11 @@ internal sealed class MeterWindow : Form
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude, "MiniMax" => preferences.MiniMax, _ => false
     };
+    public Task RefreshAfterAccountChange()
+    {
+        quotaAlerts.Clear(); accountCancellation?.Cancel();
+        return RefreshData();
+    }
     public bool AlertsEnabled => alertsEnabled;
     public event Action<IReadOnlyList<string>>? QuotaLow;
     public bool SetAlertsEnabled(bool enabled)
@@ -269,10 +281,18 @@ internal sealed class MeterWindow : Form
             {
                 bool partialFailure = false;
                 accountCancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+                string? accountInput = null; bool profilesInvalid = false;
+                if (preferences.MiniMax)
+                {
+                    try { accountInput = MiniMaxAccountInput.Build(AccountPreferences.DefaultDirectory, new WindowsMiniMaxVault()); }
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException or JsonException)
+                    { profilesInvalid = true; }
+                }
                 string arguments = "--account-only" + (preferences.Codex ? "" : " --disable-codex-account") +
                     (preferences.Kimi ? "" : " --disable-kimi-account") + (preferences.Claude ? "" : " --disable-claude-account") +
-                    (preferences.MiniMax ? " --enable-minimax-account" : "");
-                var accountTask = RunCollector(arguments, accountCancellation.Token);
+                    (preferences.MiniMax && !profilesInvalid ? " --enable-minimax-account" : "") +
+                    (accountInput is null ? "" : " --account-input");
+                var accountTask = RunCollector(arguments, accountCancellation.Token, accountInput);
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 JsonObject combined;
                 try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
@@ -280,6 +300,11 @@ internal sealed class MeterWindow : Form
                 {
                     partialFailure = true;
                     combined = new JsonObject { ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
+                }
+                if (profilesInvalid)
+                {
+                    if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
+                    combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 }
                 ApplyAccountPreferences(combined);
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
@@ -320,17 +345,32 @@ internal sealed class MeterWindow : Form
             }
         }
     }
-    static async Task<string> RunCollector(string mode, CancellationToken shutdown)
+    static async Task<string> RunCollector(string mode, CancellationToken shutdown, string? accountInput = null)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
         if (!File.Exists(path)) throw new IOException("backend_missing");
         using var process = new Process { StartInfo = new ProcessStartInfo(path, mode) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = System.Text.Encoding.UTF8 } };
+        if (accountInput is not null) { process.StartInfo.RedirectStandardInput = true; process.StartInfo.StandardInputEncoding = new System.Text.UTF8Encoding(false); }
         if (!process.Start()) throw new InvalidOperationException("backend_start_failed");
         var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
-        try { await process.WaitForExitAsync(timeout.Token); }
-        catch (OperationCanceledException) { try { process.Kill(true); } catch (InvalidOperationException) { } throw; }
+        try
+        {
+            if (accountInput is not null)
+            {
+                await process.StandardInput.WriteAsync(accountInput.AsMemory(), timeout.Token);
+                await process.StandardInput.FlushAsync(timeout.Token);
+                process.StandardInput.Close();
+            }
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+        {
+            try { process.Kill(true); }
+            catch (Exception stopError) when (stopError is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
+            throw;
+        }
         await error;
         if (process.ExitCode != 0) throw new InvalidOperationException("backend_failed");
         return await output;
@@ -426,20 +466,12 @@ internal sealed class MeterWindow : Form
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
             AddCard("CLAUDE CODE", "暂时无法获取额度", Reason(claudeAccount), null);
         var minimaxAccount = GetValue(otherAccounts, "MiniMax Code");
-        var minimaxQuotas = GetValue(GetValue(minimaxAccount, "quota"), "value");
-        if (minimaxQuotas.ValueKind == JsonValueKind.Array)
+        if (minimaxAccount.ValueKind == JsonValueKind.Array)
         {
-            foreach (var q in minimaxQuotas.EnumerateArray())
-            {
-                string label = GetString(q, "bucket", "") switch { "5h" => "5 小时", "week" => "7 天", var other => other };
-                double? remaining = GetNumber(q, "remaining_percent");
-                double? reset = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
-                string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
-                AddCard("MINIMAX CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
-            }
+            foreach (var accountRow in minimaxAccount.EnumerateArray())
+                AddMiniMaxAccount(accountRow, GetString(accountRow, "label", "账户"));
         }
-        else if (GetString(minimaxAccount, "status", "") is "unavailable" or "error")
-            AddCard("MINIMAX CODE", "暂时无法获取额度", Reason(minimaxAccount), null);
+        else AddMiniMaxAccount(minimaxAccount, "");
         }
         else if (view == View.Usage)
         {
@@ -508,6 +540,26 @@ internal sealed class MeterWindow : Form
         }
         else AddCalendarReport(GetValue(root, "calendar_report"));
         content.ResumeLayout(); ResizeCards();
+    }
+    void AddMiniMaxAccount(JsonElement account, string accountLabel)
+    {
+        string prefix = "MINIMAX CODE" + (accountLabel.Length > 0 ? " · " + accountLabel : "");
+        var quotas = GetValue(GetValue(account, "quota"), "value");
+        if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
+        {
+            foreach (var quota in quotas.EnumerateArray())
+            {
+                string label = GetString(quota, "bucket", "") switch { "5h" => "5 小时", "week" => "7 天", var other => other };
+                double? remaining = GetNumber(quota, "remaining_percent");
+                double? reset = GetNumber(GetValue(quota, "resets_at"), "epoch_seconds");
+                string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
+                AddCard(prefix + " · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+            }
+        }
+        else if (GetString(account, "status", "") is "unavailable" or "error")
+            AddCard(prefix, "暂时无法获取额度", Reason(account), null);
+        else if (GetString(account, "status", "") is "available" or "partial")
+            AddCard(prefix, "额度未提供", "账户服务未返回可展示的额度窗口", null);
     }
     void AddCalendarReport(JsonElement report)
     {
@@ -586,7 +638,12 @@ internal sealed class MeterWindow : Form
         AddGauge("Codex", GetValue(root, "account"));
         AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
         AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
-        AddGauge("MiniMax", GetValue(GetValue(root, "other_accounts"), "MiniMax Code"));
+        var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
+        if (minimax.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var account in minimax.EnumerateArray()) AddGauge("MiniMax · " + GetString(account, "label", "账户"), account);
+        }
+        else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
             gauges.Controls.Add(new Label { Text = "暂无可用账户额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
     }
@@ -613,6 +670,9 @@ internal sealed class MeterWindow : Form
         "claude_token_expired" => "Claude Code 登录已过期，请在 Claude Code 中重新登录",
         "claude_not_logged_in" or "claude_subscription_login_missing" => "未找到 Claude Code 订阅登录",
         "minimax_credential_not_connected" => "请设置 MINIMAX_TOKEN_PLAN_KEY 并重启",
+        "minimax_vault_credential_missing" => "凭据缺失或无法读取，请在账户管理中更新密钥",
+        "minimax_profiles_invalid" => "账户列表无法读取，请备份并检查本地文件",
+        "minimax_no_saved_accounts" => "尚未添加账户，请在托盘菜单管理 MiniMax 账户",
         "invalid_minimax_region" => "MiniMax 区域设置不正确（cn 或 global）",
         "history_loading" => "后台扫描中，请稍候",
         "history_no_usage_records" => "没有可统计的用量记录",

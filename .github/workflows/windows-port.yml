@@ -49,6 +49,9 @@ jobs:
           $env:MINIMAX_REGION = 'cn'
           $enabled = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $enabled.other_accounts.'MiniMax Code'.reason -ne 'minimax_credential_not_connected') { throw 'MiniMax opt-in check failed' }
+          $inputJson = '{"minimax_accounts":[{"label":"synthetic","region":"cn","key":null}]}'
+          $multiple = $inputJson | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account --account-input | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $multiple.other_accounts.'MiniMax Code'[0].reason -ne 'minimax_vault_credential_missing') { throw 'Saved account input check failed' }
       - name: Smoke test application startup
         shell: pwsh
         run: |

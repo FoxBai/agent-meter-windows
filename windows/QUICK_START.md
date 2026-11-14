@@ -9,6 +9,8 @@
 
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。
 
-Codex、Kimi、Claude 账户查询默认开启，MiniMax 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。主动开启 MiniMax 查询后，程序读取 `MINIMAX_TOKEN_PLAN_KEY` 环境变量，并通过 HTTPS 发送给 MiniMax 用量接口；`MINIMAX_REGION` 可选 `cn` 或 `global`。关闭来源时程序会尝试中止当前账户查询，已发出的请求无法撤回。Windows 界面读取支持的本机历史，不通过该界面上传历史记录。详情见项目首页及 `THIRD_PARTY_NOTICES.md`；依赖许可文本位于 `licenses/`。
+Codex、Kimi、Claude 账户查询默认开启，MiniMax 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。
+
+MiniMax 支持通过「管理 MiniMax 账户」添加最多 5 个账户，密钥保存在 Windows 凭据管理器，账户名称和区域保存在本机账户列表。主动开启查询后，密钥通过本地子进程标准输入传递，并通过 HTTPS 发往所选区域的 MiniMax 用量接口。账户列表文件不存在时，也可使用 `MINIMAX_TOKEN_PLAN_KEY` 与 `MINIMAX_REGION` 环境变量；通过界面清空账户后不会自动回退。关闭来源时程序会尝试中止当前账户查询，已发出的请求无法撤回。Windows 界面读取支持的本机历史，不通过该界面上传历史记录。详情见项目首页及 `THIRD_PARTY_NOTICES.md`；依赖许可文本位于 `licenses/`。
 
 项目地址：<https://github.com/FoxBai/agent-meter-windows>

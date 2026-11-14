@@ -45,6 +45,54 @@ class WindowsBackendTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 'invalid_minimax_region')
             request.assert_not_called()
 
+    def test_multiple_minimax_accounts_are_isolated_and_do_not_return_keys(self):
+        accounts = backend.validate_account_input({'minimax_accounts': [
+            {'label': '甲', 'region': 'cn', 'key': 'synthetic-one'},
+            {'label': '乙', 'region': 'global', 'key': 'synthetic-two'},
+            {'label': '丙', 'region': 'cn', 'key': None}]})
+        payload = {'base_resp': {'status_code': 0}, 'model_remains': [{'model_name': 'general',
+            'current_interval_remaining_percent': 65, 'end_time': 1800003600000}]}
+        with tempfile.TemporaryDirectory() as root, patch('windows.backend.get_json', return_value=payload) as request:
+            result = backend.collect(account_only=True, home=root, disabled_accounts=frozenset({'codex', 'kimi', 'claude'}),
+                                     enable_minimax=True, saved_accounts=accounts)
+        items = result['other_accounts']['MiniMax Code']
+        self.assertEqual([item['label'] for item in items], ['甲', '乙', '丙'])
+        self.assertEqual(items[2]['reason'], 'minimax_vault_credential_missing')
+        self.assertEqual({call.args[0] for call in request.call_args_list}, {
+            'https://www.minimax.cn/v1/token_plan/remains', 'https://www.minimax.io/v1/token_plan/remains'})
+        self.assertNotIn('synthetic-one', json.dumps(result))
+        self.assertNotIn('synthetic-two', json.dumps(result))
+        with self.assertRaises(ValueError):
+            backend.validate_account_input({'minimax_accounts': accounts + [accounts[0]]})
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'MINIMAX_TOKEN_PLAN_KEY': 'synthetic-env-key'}), \
+             patch.object(backend, 'minimax_quota') as legacy:
+            result = backend.collect(account_only=True, home=root, disabled_accounts=frozenset({'codex', 'kimi', 'claude'}),
+                                     enable_minimax=True, saved_accounts=[])
+            self.assertEqual(result['other_accounts']['MiniMax Code']['reason'], 'minimax_no_saved_accounts')
+            legacy.assert_not_called()
+
+    def test_invalid_account_input_never_echoes_secret(self):
+        with tempfile.TemporaryDirectory() as root:
+            data = json.dumps({'minimax_accounts': [{'label': 'a', 'region': 'invalid', 'key': 'synthetic-secret'}]})
+            run = subprocess.run([sys.executable, '-m', 'windows.backend', '--account-only', '--home', root,
+                                  '--enable-minimax-account', '--account-input'], input=data, capture_output=True,
+                                 text=True, encoding='utf-8', timeout=15)
+            self.assertNotEqual(run.returncode, 0)
+            self.assertNotIn('synthetic-secret', run.stdout + run.stderr)
+
+    def test_saved_account_input_is_received_from_standard_input(self):
+        with tempfile.TemporaryDirectory() as root:
+            data = json.dumps({'minimax_accounts': [{'label': '测试账户', 'region': 'cn', 'key': None}]}, ensure_ascii=False)
+            env = dict(os.environ, MINIMAX_TOKEN_PLAN_KEY='synthetic-env-key')
+            run = subprocess.run([sys.executable, '-m', 'windows.backend', '--account-only', '--home', root,
+                                  '--disable-codex-account', '--disable-kimi-account', '--disable-claude-account',
+                                  '--enable-minimax-account', '--account-input'], input=data, capture_output=True,
+                                 text=True, encoding='utf-8', env=env, timeout=15, check=True)
+            result = json.loads(run.stdout)['other_accounts']['MiniMax Code']
+            self.assertEqual(result[0]['label'], '测试账户')
+            self.assertEqual(result[0]['reason'], 'minimax_vault_credential_missing')
+            self.assertNotIn('synthetic-env-key', run.stdout + run.stderr)
+
     def test_claude_quota_uses_configured_file_and_fixed_service_without_exposing_token(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as config:
             token = 'synthetic-test-token'
