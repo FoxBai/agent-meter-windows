@@ -13,8 +13,12 @@ internal static class Program
         // 构建机使用纯演示数据生成视觉检查图，不启动采集器或读取用户设置。
         if (args.Length == 2 && args[0] == "--render-demo")
         {
-            using var preview = new MeterWindow(demo: true, windowed: true);
-            preview.RenderDemoImages(args[1]);
+            try
+            {
+                using var preview = new MeterWindow(demo: true, windowed: true);
+                preview.RenderDemoImages(args[1]);
+            }
+            catch (Exception) { Environment.ExitCode = 1; }
             return;
         }
         bool demo = args.Contains("--demo");
@@ -299,6 +303,18 @@ internal sealed class MeterWindow : Form
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
+        bool HasCard(string name) => content.Controls.OfType<RoundedCard>()
+            .SelectMany(card => card.Controls.OfType<Label>()).Any(label => label.Text == name);
+        var toggle = content.Controls.OfType<Button>().FirstOrDefault(button => button.Text == "查看全部额度卡片")
+            ?? throw new InvalidOperationException("card_toggle_missing");
+        if (HasCard("八分饱")) throw new InvalidOperationException("locked_card_visible");
+        toggle.PerformClick(); Application.DoEvents();
+        if (!showAllQuotaCards || !HasCard("八分饱")) throw new InvalidOperationException("card_toggle_failed");
+        SavePreview("aurora-collection-all-narrow");
+        var collapse = content.Controls.OfType<Button>().FirstOrDefault(button => button.Text == "只看已收集卡片")
+            ?? throw new InvalidOperationException("card_collapse_missing");
+        collapse.PerformClick(); Application.DoEvents();
+        if (showAllQuotaCards || HasCard("八分饱")) throw new InvalidOperationException("card_collapse_failed");
         // 多账户需要横向滚动；额外预览用于检查滚动条是否挤压仪表。
         var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
         var accounts = new JsonArray();
@@ -858,8 +874,11 @@ internal sealed class MeterWindow : Form
         toggle.FlatAppearance.BorderColor = theme.Border;
         toggle.Click += (_, _) =>
         {
+            var scroll = content.AutoScrollPosition;
             showAllQuotaCards = !showAllQuotaCards;
             if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+            content.PerformLayout();
+            content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
         };
         content.Controls.Add(toggle);
         foreach (var card in cards.EnumerateArray())
