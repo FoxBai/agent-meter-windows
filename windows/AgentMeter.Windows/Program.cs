@@ -402,7 +402,10 @@ internal sealed class MeterWindow : Form
         {
             var bar = new BreakdownBar(parts) { Location = new Point(16, 116), Height = 9 };
             box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(bar);
-            var legend = new Label { Text = "输入 · 输出 · 缓存读取\n缓存写入 · 未拆分", AutoSize = false, ForeColor = Muted, Location = new Point(16, 137), Height = 48 };
+            var legend = new FlowLayoutPanel { Location = new Point(16, 137), Height = 48, WrapContents = true };
+            string[] labels = ["输入", "输出", "缓存读取", "缓存写入", "未拆分"];
+            for (int i = 0; i < labels.Length; i++)
+                legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.Colors[i], Margin = new Padding(0, 0, 8, 0) });
             box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
         }
         else box.Controls.Add(new Label { Text = "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
@@ -566,7 +569,7 @@ internal sealed class DailyChart : Control
 internal sealed class BreakdownBar : Control
 {
     readonly double[] values;
-    static readonly Color[] Colors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
+    internal static readonly Color[] Colors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
     public BreakdownBar(double[] values) { this.values = values; DoubleBuffered = true; AccessibleName = "今日用量构成：输入、输出、缓存读取、缓存写入和未拆分"; }
     protected override void OnPaint(PaintEventArgs e)
     {
