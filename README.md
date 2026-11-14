@@ -16,7 +16,7 @@
 
 ![Agent Meter 面板，图中为虚构演示数据](windows/assets/screenshot.png)
 
-截图展示 Alpha 7 和 Alpha 8，在隔离的 Windows 构建环境中使用虚构演示数据生成；窗口边框可能因系统版本而异。实际可显示的字段取决于工具、账户、本机记录和版本。
+截图展示 Alpha 7 至 Alpha 9，在隔离的 Windows 构建环境中使用虚构演示数据生成；窗口边框可能因系统版本而异。实际可显示的字段取决于工具、账户、本机记录和版本。
 
 <details>
 <summary>查看本机消耗、报告、预测、收集与余额页面</summary>
@@ -99,7 +99,7 @@
 
 ### 下载预览版
 
-前往 [Windows v0.1.0-alpha.8 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.8)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
+前往 [Windows v0.1.0-alpha.9 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.9)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
 
 ### 从源码构建
 

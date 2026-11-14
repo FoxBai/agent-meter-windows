@@ -16,7 +16,7 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The Alpha 7 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png), [DeepSeek balance](windows/assets/deepseek-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
+The Alpha 9 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png), [DeepSeek balance](windows/assets/deepseek-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
 
 ## What it does
 
@@ -73,7 +73,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.8](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.8), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.9](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.9), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 
