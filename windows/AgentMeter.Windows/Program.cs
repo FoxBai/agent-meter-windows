@@ -240,6 +240,22 @@ internal sealed class MeterWindow : Form
             string amount = GetString(wallet, "amount", ""), currency = GetString(wallet, "unit", "");
             if (amount != "" && currency != "") AddCard("KIMI CODE · 额外用量钱包", amount + " " + currency, "账户服务提供的余额", null);
         }
+        var claudeAccount = GetValue(otherAccounts, "Claude Code");
+        var claudeQuotas = GetValue(GetValue(claudeAccount, "quota"), "value");
+        if (claudeQuotas.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var q in claudeQuotas.EnumerateArray())
+            {
+                string bucket = GetString(q, "bucket", "");
+                string label = bucket switch { "five_hour" => "5 小时", "seven_day" => "7 天", "seven_day_opus" => "7 天 · Opus", "seven_day_sonnet" => "7 天 · Sonnet", "seven_day_oauth_apps" => "7 天 · OAuth 应用", _ => bucket };
+                double? remaining = GetNumber(q, "remaining_percent");
+                double? reset = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
+                string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
+                AddCard("CLAUDE CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+            }
+        }
+        else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
+            AddCard("CLAUDE CODE", "暂时无法获取额度", Reason(claudeAccount), null);
         }
         else
         {
@@ -303,6 +319,7 @@ internal sealed class MeterWindow : Form
         while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
         AddGauge("Codex", GetValue(root, "account"));
         AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
+        AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
         if (gauges.Controls.Count == 0)
             gauges.Controls.Add(new Label { Text = "暂无可用账户额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
     }
@@ -340,6 +357,8 @@ internal sealed class MeterWindow : Form
         "rpc_disconnected" => "Codex 服务未连接，请检查登录状态",
         "kimi_server_not_running" => "未发现运行中的 Kimi 本地服务",
         "kimi_server_token_invalid" => "Kimi 本地服务凭据不可用",
+        "claude_token_expired" => "Claude Code 登录已过期，请在 Claude Code 中重新登录",
+        "claude_not_logged_in" or "claude_subscription_login_missing" => "未找到 Claude Code 订阅登录",
         "history_loading" => "后台扫描中，请稍候",
         "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
@@ -459,7 +478,7 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.2-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.2-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false}}
     """;
 }
 internal sealed class RoundedCard : Panel

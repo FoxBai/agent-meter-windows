@@ -23,6 +23,30 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_claude_quota_uses_configured_file_and_fixed_service_without_exposing_token(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as config:
+            token = 'synthetic-test-token'
+            path = Path(config) / '.credentials.json'
+            path.write_text(json.dumps({'claudeAiOauth': {'accessToken': token, 'expiresAt': 3000000000000}}), encoding='utf-8')
+            response = {'five_hour': {'utilization': 25, 'resets_at': None}}
+            with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config}), \
+                 patch('agent_meter.claude_code.get_json', return_value=response) as request:
+                result = backend.claude_quota(Path(root), 1800000000)
+            self.assertEqual(request.call_args.args[0], 'https://api.anthropic.com/api/oauth/usage')
+            self.assertEqual(request.call_args.args[1], token)
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 75)
+            self.assertNotIn(token, json.dumps(result))
+
+    def test_claude_missing_credentials_never_starts_keychain_or_network(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': ''}), \
+             patch('agent_meter.claude_code.get_json') as request, \
+             patch('agent_meter.claude_code.subprocess.run') as keychain:
+            with self.assertRaises(SourceError) as error:
+                backend.claude_quota(Path(root), time.time())
+            self.assertEqual(error.exception.code, 'claude_subscription_login_missing')
+            request.assert_not_called()
+            keychain.assert_not_called()
+
     def test_kimi_process_probe_does_not_terminate_process(self):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
         try:

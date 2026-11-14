@@ -8,7 +8,7 @@ $testCases = @(
     'tests.test_cli_sessions.CodexTests', 'tests.test_cli_sessions.McodeTests.test_rows_as_is_and_schema_guard',
     'tests.test_local_tokens.ZCodeTests', 'tests.test_local_tokens.WorkBuddyTests',
     'tests.test_local_tokens.OpenCodeTests', 'tests.test_local_tokens.QoderCreditsTests',
-    'tests.test_kimi_tokens.KimiTokenTests', 'tests.test_mimocode_tokens'
+    'tests.test_kimi_tokens.KimiTokenTests', 'tests.test_mimocode_tokens', 'tests.test_claude_code'
 )
 & $python -m unittest @testCases -q
 if ($LASTEXITCODE -ne 0) { throw 'Windows collector tests failed.' }

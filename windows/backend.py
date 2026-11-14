@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
+from agent_meter.claude_code import collect_claude
 from agent_meter.codex import normalize_limits
 from agent_meter.model import DISPLAY_ZONE, SourceError, metric
 from agent_meter.transport import CodexRPC
@@ -51,11 +52,22 @@ def kimi_quota(home, now):
             "credits": source["metrics"]["credits"]}
 
 
+def claude_quota(home, now):
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+    credentials = root / ".credentials.json"
+    # Windows 只尝试 Claude Code 已有的本地凭据文件，不调用 macOS 钥匙串，也不刷新令牌。
+    if not credentials.is_file():
+        raise SourceError("claude_subscription_login_missing")
+    source = collect_claude(home, now, timeout=12, credential_path=credentials)
+    return {"status": source["status"], "quota": source["metrics"]["quota"]}
+
+
 def account_sources(home, now):
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         codex = executor.submit(guarded, lambda: quota(codex_binary(), now))
         kimi = executor.submit(guarded, lambda: kimi_quota(home, now))
-        return codex.result(), {"Kimi Code": kimi.result()}
+        claude = executor.submit(guarded, lambda: claude_quota(home, now))
+        return codex.result(), {"Kimi Code": kimi.result(), "Claude Code": claude.result()}
 
 
 def histories(home, now):
