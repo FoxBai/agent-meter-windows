@@ -401,7 +401,7 @@ def local_medals(result):
             continue
         sources.append({"id": name, "metrics": {"tokens": {"status": "available", "value": {"daily_buckets": valid}}}})
     if not sources:
-        return None
+        return {"medals": [], "sources": 0, "incomplete": True} if incomplete else None
     all_medals, stats = medals(sources, None, result["observed_at"])
     available = {"day_peak", "lifetime", "streak", "apps", "record"}
     rows = [{key: medal[key] for key in ("id", "name", "category", "category_name", "target", "unit", "tier", "value", "progress", "earned", "earned_on")}

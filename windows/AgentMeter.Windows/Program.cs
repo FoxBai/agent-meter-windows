@@ -778,9 +778,11 @@ internal sealed class MeterWindow : Form
     {
         AddHeading("收集册", "基于本机逐日账本 · 不同记录可能重叠");
         var medals = GetValue(collection, "medals");
-        if (medals.ValueKind != JsonValueKind.Array)
+        if (medals.ValueKind != JsonValueKind.Array || medals.GetArrayLength() == 0)
         {
-            AddCard("本机徽章", "暂无可用记录", "需要可读取的本机逐日用量账本", null);
+            string note = GetValue(collection, "incomplete").ValueKind == JsonValueKind.True
+                ? "部分账本未能读取，请稍后刷新" : "需要可读取的本机逐日用量账本";
+            AddCard("本机徽章", "暂无可用记录", note, null);
             return;
         }
         var earned = GetNumber(collection, "earned"); var total = GetNumber(collection, "total");

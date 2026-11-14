@@ -46,6 +46,9 @@ class WindowsBackendTests(unittest.TestCase):
         empty = {'status': 'available', 'value': {'periods': {'all': {'totals': {'requests': 1, 'total_tokens': 0}}},
                  'daily_buckets': [{'date': '2026-11-14', 'tokens': 0}]}}
         self.assertIsNone(backend.local_medals({'observed_at': now, 'history': {'Codex': empty}}))
+        failed = backend.local_medals({'observed_at': now, 'history': {'Codex': {'status': 'error', 'reason': 'read_failed'}}})
+        self.assertTrue(failed['incomplete'])
+        self.assertEqual(failed['medals'], [])
 
     def test_forecast_projection_keeps_basis_and_never_invents_missing_values(self):
         source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
