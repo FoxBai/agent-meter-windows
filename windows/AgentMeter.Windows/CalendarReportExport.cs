@@ -25,8 +25,9 @@ internal static class CalendarReportExport
             if (previousStart >= currentStart || currentEnd < currentStart) throw new InvalidDataException("报告日期不正确");
             long currentTokens = ReadTokens(period, "current_tokens"), previousTokens = ReadTokens(period, "previous_tokens");
             output.AppendLine($"## {current}与{previous}").AppendLine();
-            output.AppendLine($"- {current}（{currentStart:yyyy-MM-dd} 至 {currentEnd:yyyy-MM-dd}，截至当前日期）：{currentTokens.ToString("N0", CultureInfo.InvariantCulture)} Token");
-            output.AppendLine($"- {previous}（{previousStart:yyyy-MM-dd} 至 {currentStart.AddDays(-1):yyyy-MM-dd}，完整周期）：{previousTokens.ToString("N0", CultureInfo.InvariantCulture)} Token").AppendLine();
+            static string FormatDate(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            output.AppendLine($"- {current}（{FormatDate(currentStart)} 至 {FormatDate(currentEnd)}，截至当前日期）：{currentTokens.ToString("N0", CultureInfo.InvariantCulture)} Token");
+            output.AppendLine($"- {previous}（{FormatDate(previousStart)} 至 {FormatDate(currentStart.AddDays(-1))}，完整周期）：{previousTokens.ToString("N0", CultureInfo.InvariantCulture)} Token").AppendLine();
         }
         if (Field(report, "incomplete").ValueKind == JsonValueKind.True)
             output.AppendLine("部分来源或逐日记录不完整，汇总可能偏低。").AppendLine();

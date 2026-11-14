@@ -95,6 +95,14 @@ try
     if (!exported.Contains("虚构演示数据") || !exported.Contains("2025-12-28") || !exported.Contains("300 Token") ||
         !exported.Contains("部分来源") || exported.Contains("synthetic-secret") || exported.Contains("synthetic-private-text"))
         throw new InvalidOperationException("报告导出内容或隐私边界不正确");
+    var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+    try
+    {
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("ar-SA");
+        if (!CalendarReportExport.Create(reportData.RootElement).Contains("2025-12-28"))
+            throw new InvalidOperationException("报告日期不应随系统区域设置改变");
+    }
+    finally { System.Globalization.CultureInfo.CurrentCulture = originalCulture; }
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
