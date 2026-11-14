@@ -514,6 +514,30 @@ internal sealed class MeterWindow : Form
         }
         AddCard("统计说明", "自然周期比较", "当前周期尚未结束；上期为完整周期", null,
                 "仅覆盖本机可读取记录，不等于账户总量");
+        var export = new Button { Text = "导出 Markdown 报告", Height = 42, Margin = new Padding(0, 0, 0, 12),
+            BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        export.FlatAppearance.BorderColor = theme.Border;
+        export.Click += (_, _) => ExportCalendarReport();
+        content.Controls.Add(export);
+    }
+    void ExportCalendarReport()
+    {
+        try
+        {
+            if (lastSnapshot is null) throw new InvalidDataException("没有可导出的报告");
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            string report = CalendarReportExport.Create(snapshot.RootElement, demo);
+            using var dialog = new SaveFileDialog { Title = "导出本机用量报告", Filter = "Markdown 文件 (*.md)|*.md|文本文件 (*.txt)|*.txt",
+                FileName = "AgentMeter-报告-" + DateTime.Now.ToString("yyyy-MM-dd") + ".md", AddExtension = true, OverwritePrompt = true };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            File.WriteAllText(dialog.FileName, report, new System.Text.UTF8Encoding(false));
+            status.Text = "报告已导出到所选位置";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException or System.Security.SecurityException)
+        {
+            MessageBox.Show(this, ex is InvalidDataException ? ex.Message : "无法导出报告，请检查目标位置。",
+                "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
     void UpdateGauges(JsonElement root)
     {

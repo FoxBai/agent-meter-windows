@@ -11,5 +11,6 @@
     <Compile Include="..\AgentMeter.Windows\VisualThemes.cs" Link="VisualThemes.cs" />
     <Compile Include="..\AgentMeter.Windows\PriceOverrides.cs" Link="PriceOverrides.cs" />
     <Compile Include="..\AgentMeter.Windows\QuotaAlerts.cs" Link="QuotaAlerts.cs" />
+    <Compile Include="..\AgentMeter.Windows\CalendarReportExport.cs" Link="CalendarReportExport.cs" />
   </ItemGroup>
 </Project>

@@ -86,6 +86,15 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(kimi, now).Single().Contains("月度总额"))
         throw new InvalidOperationException("Kimi 月度额度提醒应显示中文名称");
+    using var reportData = JsonDocument.Parse("""
+    {"account":{"credential":"synthetic-secret"},"history":{"message":"synthetic-private-text"},"calendar_report":{"incomplete":true,"periods":{
+      "week":{"previous_start":"2025-12-22","current_start":"2025-12-29","current_end":"2026-01-01","previous_tokens":50,"current_tokens":300},
+      "month":{"previous_start":"2025-12-01","current_start":"2026-01-01","current_end":"2026-01-01","previous_tokens":180,"current_tokens":200}}}}
+    """);
+    string exported = CalendarReportExport.Create(reportData.RootElement, demo: true);
+    if (!exported.Contains("虚构演示数据") || !exported.Contains("2025-12-28") || !exported.Contains("300 Token") ||
+        !exported.Contains("部分来源") || exported.Contains("synthetic-secret") || exported.Contains("synthetic-private-text"))
+        throw new InvalidOperationException("报告导出内容或隐私边界不正确");
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
@@ -105,7 +114,7 @@ try
         throw new InvalidOperationException("面板应适应较小工作区");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 1920, 1040)) != new Size(500, 760))
         throw new InvalidOperationException("足够大的工作区不应改变面板尺寸");
-    Console.WriteLine("账户开关、面板位置、主题、价格设置和额度提醒检查通过");
+    Console.WriteLine("账户开关、面板位置、主题、价格、提醒和报告导出检查通过");
 }
 finally
 {
