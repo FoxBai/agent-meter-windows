@@ -7,10 +7,11 @@ import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
 from agent_meter.codex import normalize_limits
-from agent_meter.model import SourceError, metric
+from agent_meter.model import DISPLAY_ZONE, SourceError, metric
 from agent_meter.transport import CodexRPC
 from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import zcode_tokens_metric
@@ -122,6 +123,44 @@ def collect(local_only=False, home=None, account_only=False):
                 "local_credits": {"Qoder CN": qoder.result()}}
 
 
+def recent_daily_trend(result):
+    """汇总北京时间最近七个自然日；缺失日只对可读取的账本视作零。"""
+    today = datetime.fromtimestamp(result["observed_at"], DISPLAY_ZONE).date()
+    days = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+    totals = dict.fromkeys(days, 0)
+    sources = 0
+    incomplete = False
+    for item in result["history"].values():
+        status = item.get("status")
+        reason = item.get("reason") or ""
+        if status in {"error", "partial"} or (status == "unavailable" and reason and not reason.endswith("_not_found")):
+            incomplete = True
+        value = item.get("value")
+        if not isinstance(value, dict):
+            continue
+        periods = value.get("periods", {})
+        all_totals = periods.get("all", {}).get("totals", {})
+        if all_totals.get("requests") == 0:
+            continue
+        rows = value.get("daily_buckets")
+        if not isinstance(rows, list):
+            incomplete = True
+            continue
+        sources += 1
+        for row in rows:
+            if not isinstance(row, dict):
+                incomplete = True
+                continue
+            day, count = row.get("date"), row.get("tokens")
+            if not isinstance(day, str) or not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                incomplete = True
+                continue
+            if day in totals:
+                totals[day] += count
+    return {"days": [{"date": day, "tokens": totals[day]} for day in days],
+            "sources": sources, "incomplete": incomplete} if sources else None
+
+
 def compact_history(result):
     """仅向面板传递显示字段；模型明细按用量排序并限制数量。"""
     compact = {"version": result["version"], "observed_at": result["observed_at"],
@@ -158,6 +197,7 @@ def compact_history(result):
                     selected[period]["groups_truncated"] = len(groups) > 20
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
                                     "value": {"periods": selected} if selected else None}
+    compact["daily_trend"] = recent_daily_trend(result)
     compact["local_credits"] = {}
     for name, item in result.get("local_credits", {}).items():
         value = item.get("value")

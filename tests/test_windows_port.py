@@ -197,6 +197,21 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(period['groups'][0], {'model': 'model-24', 'total_tokens': 24})
         self.assertTrue(period['groups_truncated'])
 
+    def test_daily_trend_uses_beijing_dates_and_marks_partial_sources(self):
+        now = datetime(2026, 11, 14, 16, 30, tzinfo=timezone.utc).timestamp()
+        source = {'version': 1, 'observed_at': now, 'account': {}, 'history': {
+            '甲': {'status': 'available', 'value': {'periods': {}, 'daily_buckets': [
+                {'date': '2026-11-14', 'tokens': 15}, {'date': '2026-11-15', 'tokens': 7},
+                {'date': '2026-11-08', 'tokens': 500}, {'date': '2026-11-16', 'tokens': 500}]}},
+            '乙': {'status': 'partial', 'value': {'periods': {}, 'daily_buckets': [
+                {'date': '2026-11-15', 'tokens': 3}]}}}}
+        trend = backend.compact_history(source)['daily_trend']
+        self.assertEqual(trend['days'][0], {'date': '2026-11-09', 'tokens': 0})
+        self.assertEqual(trend['days'][-2:], [{'date': '2026-11-14', 'tokens': 15},
+                                              {'date': '2026-11-15', 'tokens': 10}])
+        self.assertEqual(trend['sources'], 2)
+        self.assertTrue(trend['incomplete'])
+
     def test_account_only_does_not_start_history_scan(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \
              patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \

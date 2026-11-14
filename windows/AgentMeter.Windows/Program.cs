@@ -135,6 +135,7 @@ internal sealed class MeterWindow : Form
                     var local = JsonNode.Parse(await historyTask)!.AsObject();
                     combined["history"] = local["history"]?.DeepClone();
                     combined["local_credits"] = local["local_credits"]?.DeepClone();
+                    combined["daily_trend"] = local["daily_trend"]?.DeepClone();
                 }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                 {
@@ -247,6 +248,7 @@ internal sealed class MeterWindow : Form
         if (history.ValueKind == JsonValueKind.Object)
         {
             AddUsageSummary(history);
+            AddDailyTrend(GetValue(root, "daily_trend"));
             int visible = 0;
             foreach (var item in history.EnumerateObject())
             {
@@ -359,11 +361,12 @@ internal sealed class MeterWindow : Form
         double[] parts = new double[5];
         foreach (var item in history.EnumerateObject())
         {
+            string status = GetString(item.Value, "status", "");
+            if (status is "error" or "partial" || (status == "unavailable" && !IsAbsent(item.Value))) partial = true;
             var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "today"), "totals");
             var amount = GetNumber(totals, "total_tokens");
             if (!amount.HasValue || amount.Value < 0) continue;
             total += amount.Value; sources++;
-            partial |= GetString(item.Value, "status", "") == "partial";
             double[] values = [GetNumber(totals, "fresh_input") ?? 0,
                 (GetNumber(totals, "output") ?? 0) + (GetNumber(totals, "reasoning") ?? 0),
                 GetNumber(totals, "cache_read") ?? 0, GetNumber(totals, "cache_write") ?? 0,
@@ -384,6 +387,26 @@ internal sealed class MeterWindow : Form
             box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
         }
         else box.Controls.Add(new Label { Text = "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
+        content.Controls.Add(box);
+    }
+    void AddDailyTrend(JsonElement trend)
+    {
+        var days = GetValue(trend, "days");
+        if (days.ValueKind != JsonValueKind.Array) return;
+        var points = new List<(string Date, double Tokens)>();
+        foreach (var day in days.EnumerateArray())
+        {
+            string date = GetString(day, "date", ""); var tokens = GetNumber(day, "tokens");
+            if (date.Length != 10 || !tokens.HasValue || tokens.Value < 0) return;
+            points.Add((date, tokens.Value));
+        }
+        if (points.Count != 7) return;
+        var box = new RoundedCard { Height = 218, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = "最近 7 个自然日", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(15, 10) });
+        bool incomplete = GetValue(trend, "incomplete").ValueKind == JsonValueKind.True;
+        box.Controls.Add(new Label { Text = incomplete ? "北京时间 · 部分记录不完整" : "北京时间 · 本机账本相加", AutoSize = true, ForeColor = Muted, Location = new Point(16, 38) });
+        var chart = new DailyChart(points) { Location = new Point(14, 70), Height = 132 };
+        box.Resize += (_, _) => chart.Width = Math.Max(0, box.ClientSize.Width - 28); box.Controls.Add(chart);
         content.Controls.Add(box);
     }
     void AddCard(string name, string value, string detail, double? progress, string? extra = null)
@@ -408,7 +431,7 @@ internal sealed class MeterWindow : Form
         foreach (var item in history.EnumerateObject())
         {
             string status = GetString(item.Value, "status", "");
-            if (status is "error" or "partial") incomplete = true;
+            if (status is "error" or "partial" || (status == "unavailable" && !IsAbsent(item.Value))) incomplete = true;
             var week = GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "7d");
             var total = GetNumber(GetValue(week, "totals"), "total_tokens");
             if (!total.HasValue || total.Value <= 0) continue;
@@ -436,7 +459,7 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.2-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.2-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false}}
     """;
 }
 internal sealed class RoundedCard : Panel
@@ -488,6 +511,37 @@ internal sealed class QuotaGauge : Control
         TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), Color.White, TextFormatFlags.HorizontalCenter);
         TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter);
+    }
+}
+internal sealed class DailyChart : Control
+{
+    readonly IReadOnlyList<(string Date, double Tokens)> points;
+    public DailyChart(IReadOnlyList<(string Date, double Tokens)> points)
+    {
+        this.points = points; DoubleBuffered = true; AccessibleRole = AccessibleRole.Graphic;
+        AccessibleName = "最近七个自然日 Token：" + string.Join("，", points.Select(p => $"{p.Date} {p.Tokens:0}"));
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        double maximum = Math.Max(1, points.Max(p => p.Tokens));
+        int slot = Math.Max(1, Width / points.Count), baseline = Height - 28, top = 22;
+        using var guide = new Pen(Color.FromArgb(65, 74, 100));
+        using var fill = new SolidBrush(Color.FromArgb(117, 220, 194));
+        using var small = new Font(Font.FontFamily, 8F);
+        string peak = maximum >= 1_000_000 ? $"{maximum / 1_000_000:0.##}M" : maximum >= 1_000 ? $"{maximum / 1_000:0.##}K" : $"{(points.Max(p => p.Tokens)):0}";
+        TextRenderer.DrawText(e.Graphics, "单日最高 " + peak, small, new Point(0, 0), Color.FromArgb(158, 170, 190));
+        e.Graphics.DrawLine(guide, 0, baseline, Width, baseline);
+        for (int i = 0; i < points.Count; i++)
+        {
+            var point = points[i]; int barHeight = (int)Math.Round((baseline - top) * point.Tokens / maximum);
+            int barWidth = Math.Max(4, Math.Min(24, slot / 2)), x = i * slot + (slot - barWidth) / 2;
+            if (barHeight > 0) e.Graphics.FillRectangle(fill, x, baseline - barHeight, barWidth, barHeight);
+            var labelArea = new Rectangle(i * slot, baseline + 5, slot, 20);
+            TextRenderer.DrawText(e.Graphics, point.Date[5..].Replace('-', '/'), small, labelArea,
+                Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+        }
     }
 }
 internal sealed class BreakdownBar : Control
