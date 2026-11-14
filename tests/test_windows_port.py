@@ -24,6 +24,54 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_quota_cards_drop_once_and_preserve_private_account_names(self):
+        now = 1800000000
+        def account(label, remaining, reset=1800003600):
+            return {'label': label, 'status': 'available', 'quota': {'status': 'available', 'value': [
+                {'bucket': '5h', 'remaining_percent': remaining, 'resets_at': {'epoch_seconds': reset}}]}}
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = {'account': {'status': 'disabled'}, 'other_accounts': {'MiniMax Code': [account('synthetic-private-label', 15)]}}
+            first = backend.update_quota_cards(root, snapshot, now)
+            cards = {row['id']: row['count'] for row in first['cards']}
+            self.assertEqual((cards['q5_50'], cards['q5_80'], cards['q5_90']), (1, 1, 0))
+            again = backend.update_quota_cards(root, snapshot, now + 60)
+            self.assertEqual({row['id']: row['count'] for row in again['cards']}, cards)
+            snapshot['other_accounts']['MiniMax Code'][0] = account('synthetic-private-label', 5)
+            later = backend.update_quota_cards(root, snapshot, now + 120)
+            self.assertEqual({row['id']: row['count'] for row in later['cards']}['q5_90'], 1)
+            snapshot['other_accounts']['MiniMax Code'].append(account('synthetic-second-label', 15))
+            multiple = backend.update_quota_cards(root, snapshot, now + 180)
+            self.assertEqual({row['id']: row['count'] for row in multiple['cards']}['q5_80'], 2)
+            ledger = (Path(root) / 'collection.json').read_text(encoding='utf-8')
+            self.assertNotIn('synthetic-private-label', ledger)
+            self.assertNotIn('synthetic-second-label', ledger)
+            self.assertNotIn('synthetic-private-label', json.dumps(later))
+
+    def test_quota_cards_ignore_invalid_or_expired_windows_and_preserve_corrupt_ledger(self):
+        now = 1800000000
+        snapshot = {'account': {'status': 'available', 'quota': {'status': 'available', 'value': [
+            {'bucket': '5h', 'remaining_percent': 0, 'resets_at': {'epoch_seconds': now - 1}},
+            {'bucket': '5h', 'remaining_percent': True, 'resets_at': {'epoch_seconds': now + 3600}},
+            {'bucket': 'unsafe|bucket', 'remaining_percent': 0, 'resets_at': {'epoch_seconds': now + 3600}}]}}, 'other_accounts': {}}
+        self.assertEqual(backend.quota_card_sources(snapshot, now), [])
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'collection.json'
+            path.write_text('{invalid', encoding='utf-8')
+            result = backend.update_quota_cards(root, snapshot, now)
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(path.read_text(encoding='utf-8'), '{invalid')
+
+    def test_weekly_quota_card_uses_its_own_tiers(self):
+        now = 1800000000
+        snapshot = {'account': {'status': 'available', 'quota': {'status': 'available', 'value': [
+            {'bucket': 'codex', 'window_minutes': 10080, 'remaining_percent': 0,
+             'resets_at': {'epoch_seconds': now + 7 * 86400}}]}}, 'other_accounts': {}}
+        with tempfile.TemporaryDirectory() as root:
+            result = backend.update_quota_cards(root, snapshot, now)
+        counts = {row['id']: row['count'] for row in result['cards']}
+        self.assertEqual([counts[f'q7_{suffix}'] for suffix in ('50', '80', '90', 'full')], [1, 1, 1, 1])
+        self.assertEqual(counts['q5_50'], 0)
+
     def test_local_medals_use_supported_daily_records_and_mark_gaps(self):
         now = datetime(2026, 11, 14, 12, tzinfo=timezone.utc).timestamp()
         metric = {'status': 'available', 'value': {'periods': {'all': {'totals': {'requests': 2, 'total_tokens': 100000002}}},

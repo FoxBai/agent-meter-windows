@@ -1,5 +1,6 @@
 """Windows 适配层：复用上游只读采集器，仅输出指标，不输出会话内容或凭据。"""
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -30,7 +31,7 @@ from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_
 from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, pooled_value
-from agent_meter.collection import medals
+from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
 
 
 def codex_binary():
@@ -411,6 +412,108 @@ def local_medals(result):
             "active_days": stats["active_days"], "timezone": "Asia/Shanghai"}
 
 
+def quota_card_sources(snapshot, now):
+    """只投影可信额度窗口；多账户名称不会写入卡册账本。"""
+    if not isinstance(snapshot, dict):
+        raise ValueError("invalid account snapshot")
+    others = snapshot.get("other_accounts") if isinstance(snapshot.get("other_accounts"), dict) else {}
+    accounts = [("codex", snapshot.get("account")), ("kimi", others.get("Kimi Code")),
+                ("claude", others.get("Claude Code"))]
+    minimax = others.get("MiniMax Code")
+    if isinstance(minimax, list):
+        for item in minimax[:5]:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("label")
+            if not isinstance(label, str) or not 0 < len(label.strip()) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in label):
+                continue
+            identity = hashlib.sha256(label.casefold().encode("utf-8")).hexdigest()[:24]
+            accounts.append(("minimax#" + identity, item))
+    else:
+        accounts.append(("minimax", minimax))
+    sources = []
+    for identity, account in accounts:
+        if not isinstance(account, dict) or account.get("status") not in {"available", "partial"}:
+            continue
+        quota = account.get("quota")
+        rows = quota.get("value") if isinstance(quota, dict) else None
+        if not isinstance(rows, list) or quota.get("status") not in {None, "available", "partial"}:
+            continue
+        safe = []
+        for row in rows[:50]:
+            if not isinstance(row, dict):
+                continue
+            bucket, remaining = row.get("bucket"), row.get("remaining_percent")
+            reset = row.get("resets_at")
+            reset = reset.get("epoch_seconds") if isinstance(reset, dict) else None
+            if (not isinstance(bucket, str) or not 0 < len(bucket) <= 80 or
+                    not all(c.isascii() and (c.isalnum() or c in "_-.") for c in bucket) or
+                    isinstance(remaining, bool) or not isinstance(remaining, (int, float)) or
+                    not math.isfinite(remaining) or not 0 <= remaining <= 100 or
+                    isinstance(reset, bool) or not isinstance(reset, (int, float)) or
+                    not math.isfinite(reset) or not now < reset <= now + 400 * 86400):
+                continue
+            out = {"bucket": bucket, "used_percent": 100 - remaining, "resets_at": {"epoch_seconds": int(reset)}}
+            minutes = row.get("window_minutes")
+            if not isinstance(minutes, bool) and isinstance(minutes, (int, float)) and math.isfinite(minutes) and 0 < minutes <= 525600:
+                out["window_minutes"] = minutes
+            elif bucket in {"limit5h", "limit7d"}:
+                out["window_minutes"] = 300 if bucket == "limit5h" else 10080
+            window = row.get("window")
+            if isinstance(window, dict) and window.get("unit") in {"minute", "minutes", "hour", "hours", "day", "days", "week", "weeks"}:
+                duration = window.get("duration")
+                if not isinstance(duration, bool) and isinstance(duration, (int, float)) and math.isfinite(duration) and 0 < duration <= 525600:
+                    out["window"] = {"unit": window["unit"], "duration": duration}
+            safe.append(out)
+        if safe:
+            sources.append({"id": identity, "scope": "account", "status": "available",
+                            "metrics": {"quota": {"status": "available", "value": safe}}})
+    return sources
+
+
+def update_quota_cards(directory, snapshot, now):
+    """复用上游阈值规则并原子保存额度卡片进度；不保存账户密钥或会话。"""
+    path = Path(directory) / "collection.json"
+    if path.exists():
+        try:
+            if path.stat().st_size > 8 * 1024 * 1024:
+                raise ValueError("ledger_too_large")
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            required = {"windows": dict, "drops": list}
+            optional = {"inventory": dict, "cards": dict, "creative": dict}
+            if not isinstance(existing, dict) or existing.get("schema") != LEDGER_SCHEMA or any(
+                    not isinstance(existing.get(key), kind) for key, kind in required.items()) or any(
+                    key in existing and not isinstance(existing[key], kind) for key, kind in optional.items()):
+                raise ValueError("ledger_invalid")
+            for state in existing["windows"].values():
+                if not isinstance(state, dict) or state.get("kind") not in {"five_hour", "seven_day"} or not isinstance(state.get("source"), str):
+                    raise ValueError("ledger_invalid")
+                for field in ("resets_at", "peak", "first_at", "last_at"):
+                    number = state.get(field)
+                    if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
+                        raise ValueError("ledger_invalid")
+                if not 0 <= state["peak"] <= 100 or ("granted" in state and not isinstance(state["granted"], list)):
+                    raise ValueError("ledger_invalid")
+            for item in existing.get("cards", {}).values():
+                if not isinstance(item, dict) or isinstance(item.get("count"), bool) or not isinstance(item.get("count"), int) or item["count"] < 0:
+                    raise ValueError("ledger_invalid")
+        except (OSError, ValueError, TypeError):
+            return {"status": "error", "reason": "collection_ledger_unreadable", "cards": []}
+    ledger = load_ledger(path)
+    if track_windows(ledger, quota_card_sources(snapshot, now), now):
+        save_ledger(path, ledger)
+    definitions = [item for item in CARDS if item[2] in {"five_hour", "seven_day"}]
+    cards = []
+    for card_id, name, series, rarity, _symbol, description in definitions:
+        owned = ledger["cards"].get(card_id, {})
+        count = owned.get("count", 0) if isinstance(owned, dict) else 0
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            return {"status": "error", "reason": "collection_ledger_unreadable", "cards": []}
+        cards.append({"id": card_id, "name": name, "series": series, "rarity": rarity,
+                      "description": description, "count": count})
+    return {"status": "available", "cards": cards, "distinct": sum(card["count"] > 0 for card in cards)}
+
+
 _DEFAULT_PRICE_TABLE = object()
 
 
@@ -572,6 +675,7 @@ def main():
     parser.add_argument("--account-only", action="store_true")
     parser.add_argument("--history-worker", action="store_true")
     parser.add_argument("--forecast-only", action="store_true", help="查询第三方公开重置预测")
+    parser.add_argument("--cards-update", action="store_true", help="使用标准输入中的额度更新本地卡册")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -580,6 +684,25 @@ def main():
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.cards_update:
+        if args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
+            raise SystemExit(2)
+        local_data = os.environ.get("LOCALAPPDATA")
+        if not local_data or not Path(local_data).is_absolute():
+            print(json.dumps({"status": "error", "reason": "collection_directory_unavailable", "cards": []}))
+            return
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("account snapshot too large")
+            snapshot = json.loads(raw.lstrip("\ufeff"))
+            if not isinstance(snapshot, dict) or set(snapshot) != {"account", "other_accounts"}:
+                raise ValueError("invalid account snapshot")
+        except (ValueError, TypeError, RecursionError):
+            raise SystemExit(2) from None
+        print(json.dumps(guarded(lambda: update_quota_cards(Path(local_data) / "AgentMeter", snapshot, time.time())), ensure_ascii=False))
+        return
     if args.forecast_only:
         if args.history_worker or args.account_only or args.local_only or args.account_input:
             raise SystemExit(2)

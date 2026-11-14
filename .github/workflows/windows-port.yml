@@ -98,6 +98,15 @@ jobs:
             $forecast = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --forecast-only | ConvertFrom-Json
             if ($LASTEXITCODE -ne 0 -or $forecast.cache_state -ne 'served_from_cache' -or $forecast.sources[0].name -ne 'WillReset' -or $forecast.sources[0].'24h' -ne 83) { throw 'Forecast cache projection failed' }
           } finally { $env:LOCALAPPDATA = $savedLocalAppData }
+          try {
+            $env:LOCALAPPDATA = "$env:RUNNER_TEMP/agentmeter-cards"
+            $reset = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 3600
+            $account = @{ account = @{ status = 'available'; quota = @{ status = 'available'; value = @(@{ bucket = 'codex'; window_minutes = 300; remaining_percent = 15; resets_at = @{ epoch_seconds = $reset } }) } }; other_accounts = @{} } | ConvertTo-Json -Depth 10 -Compress
+            $firstCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or @($firstCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card drop failed' }
+            $secondCards = $account | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --cards-update | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or @($secondCards.cards | Where-Object { $_.id -eq 'q5_80' -and $_.count -eq 1 }).Count -ne 1) { throw 'Quota card deduplication failed' }
+          } finally { $env:LOCALAPPDATA = $savedLocalAppData }
       - name: Smoke test application startup
         shell: pwsh
         run: |

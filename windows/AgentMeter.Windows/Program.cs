@@ -206,7 +206,7 @@ internal sealed class MeterWindow : Form
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
-    bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled;
+    bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
     Size preferredSize;
     View view = View.Accounts;
     string? lastSnapshot;
@@ -455,6 +455,7 @@ internal sealed class MeterWindow : Form
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
+                sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
             }
             else
@@ -489,8 +490,14 @@ internal sealed class MeterWindow : Form
                     combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 }
                 ApplyAccountPreferences(combined);
+                string? cardInput = new JsonObject { ["account"] = combined["account"]?.DeepClone(),
+                    ["other_accounts"] = combined["other_accounts"]?.DeepClone() ?? new JsonObject() }.ToJsonString();
+                var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
+                cardInput = null;
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
                 combined["forecast"] = new JsonObject { ["status"] = forecastEnabled ? "loading" : "disabled" };
+                combined["quota_cards"] = new JsonObject { ["status"] = "loading" };
+                combined["local_medals"] = new JsonObject { ["status"] = "loading" };
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) { Render(first.RootElement); NotifyLowQuota(first.RootElement); }
                 status.Text = "账户读取完成 · 正在扫描本机会话记录…";
                 try
@@ -508,10 +515,16 @@ internal sealed class MeterWindow : Form
                 {
                     partialFailure = true;
                     combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "error", ["reason"] = "history_scan_failed" } };
+                    combined["local_medals"] = new JsonObject { ["status"] = "error", ["incomplete"] = true, ["medals"] = new JsonArray() };
                 }
                 ApplyAccountPreferences(combined);
                 using (var localSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(localSnapshot.RootElement);
                 status.Text = partialFailure ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
+                try { combined["quota_cards"] = JsonNode.Parse(await cardTask); }
+                catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                { combined["quota_cards"] = new JsonObject { ["status"] = "error" }; }
+                ApplyAccountPreferences(combined);
+                using (var cardsSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(cardsSnapshot.RootElement);
                 if (forecastTask is not null)
                 {
                     try { combined["forecast"] = JsonNode.Parse(await forecastTask); }
@@ -737,7 +750,7 @@ internal sealed class MeterWindow : Form
         }
         else if (view == View.Report) AddCalendarReport(GetValue(root, "calendar_report"));
         else if (view == View.Forecast) AddForecast(GetValue(root, "forecast"));
-        else AddCollection(GetValue(root, "local_medals"));
+        else AddCollection(GetValue(root, "local_medals"), GetValue(root, "quota_cards"));
         content.ResumeLayout(); ResizeCards();
     }
     void AddForecast(JsonElement forecast)
@@ -787,9 +800,13 @@ internal sealed class MeterWindow : Form
         }
         AddCard("统计说明", "仅供参考", "第三方预测并非官方承诺，也不是个人额度周期", null);
     }
-    void AddCollection(JsonElement collection)
+    void AddCollection(JsonElement collection, JsonElement quotaCards)
     {
-        AddHeading("收集册", "基于本机逐日账本 · 不同记录可能重叠");
+        AddHeading("收集册", "额度卡片与本机徽章分别计算");
+        AddQuotaCards(quotaCards);
+        AddHeading("本机徽章", "根据本机逐日账本计算，不同账本可能重叠");
+        if (GetString(collection, "status", "") == "loading")
+        { AddCard("本机徽章", "正在计算", "本机记录仍在扫描", null); return; }
         var medals = GetValue(collection, "medals");
         if (medals.ValueKind != JsonValueKind.Array || medals.GetArrayLength() == 0)
         {
@@ -819,12 +836,41 @@ internal sealed class MeterWindow : Form
                 string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", _ => "" };
                 bool hasMedal = GetValue(row, "earned").ValueKind == JsonValueKind.True;
                 string date = GetString(row, "earned_on", "");
-                string detail = $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}" +
-                    (hasMedal && date.Length == 10 ? " · 达成于 " + date : "");
-                AddMedalCard(name, GetString(row, "tier", "bronze"), hasMedal, detail, Math.Clamp(progress.Value * 100, 0, 100));
+                string detail = $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}";
+                string? dateNote = hasMedal && date.Length == 10 ? "达成于 " + date : null;
+                AddMedalCard(name, GetString(row, "tier", "bronze"), hasMedal, detail, dateNote, Math.Clamp(progress.Value * 100, 0, 100));
             }
         }
-        AddCard("尚在移植", "更多卡片与徽章", "签到、图片、估算花费等暂未计算", null);
+        AddCard("尚在移植", "更多卡片与徽章", "签到、重置卡、图片、估算花费等暂未计算", null);
+    }
+
+    void AddQuotaCards(JsonElement collection)
+    {
+        string status = GetString(collection, "status", "loading");
+        if (status == "loading") { AddCard("额度卡片", "正在读取", "卡片进度保存在本机", null); return; }
+        var cards = GetValue(collection, "cards");
+        if (status != "available" || cards.ValueKind != JsonValueKind.Array)
+        { AddCard("额度卡片", "暂时无法读取", "请检查设置目录并稍后重试", null); return; }
+        var distinct = GetNumber(collection, "distinct");
+        AddCard("额度卡片", distinct.HasValue ? $"{distinct:0} / {cards.GetArrayLength()} 种已收集" : "本机卡册",
+                "额度窗口达到对应用量时掉落", null);
+        var toggle = new Button { Text = showAllQuotaCards ? "只看已收集卡片" : "查看全部额度卡片", Height = 38,
+            Margin = new Padding(0, 0, 0, 12), BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        toggle.FlatAppearance.BorderColor = theme.Border;
+        toggle.Click += (_, _) =>
+        {
+            showAllQuotaCards = !showAllQuotaCards;
+            if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+        };
+        content.Controls.Add(toggle);
+        foreach (var card in cards.EnumerateArray())
+        {
+            var count = GetNumber(card, "count");
+            if (!count.HasValue || !double.IsFinite(count.Value) || count < 0 || (!showAllQuotaCards && count == 0)) continue;
+            string tier = GetString(card, "rarity", "") switch { "rare" => "silver", "epic" => "gold", "legendary" => "platinum", _ => "bronze" };
+            AddMedalCard(GetString(card, "name", "额度卡片"), tier, count > 0, $"已收集 {count:0} 张",
+                         GetString(card, "description", ""), count > 0 ? 100 : 0);
+        }
     }
 
     void AddApplications(JsonElement activity)
@@ -1067,9 +1113,9 @@ internal sealed class MeterWindow : Form
     }
     sealed record QuotaRow(string Name, double? Remaining, string Reset);
 
-    void AddMedalCard(string name, string tier, bool earned, string detail, double progress)
+    void AddMedalCard(string name, string tier, bool earned, string detail, string? date, double progress)
     {
-        var box = new RoundedCard(theme) { Height = 112, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme) { Height = date is null ? 112 : 136, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         var badge = new MedalBadge(theme, tier, earned) { Location = new Point(16, 20), Size = new Size(58, 58),
             AccessibleName = name + (earned ? "，已获得" : "，待解锁") };
         var title = new Label { Text = name, AutoEllipsis = true, Height = 21, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
@@ -1079,7 +1125,13 @@ internal sealed class MeterWindow : Form
         var note = new Label { Text = detail, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(85, 84) };
         var bar = new MeterBar(theme) { Value = progress, Location = new Point(85, 70), Height = 5 };
         box.Controls.AddRange([badge, title, state, note, bar]);
-        box.Resize += (_, _) => { title.Width = note.Width = bar.Width = Math.Max(0, box.ClientSize.Width - 101); };
+        Label? dateLabel = date is null ? null : new Label { Text = date, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(85, 108) };
+        if (dateLabel is not null) box.Controls.Add(dateLabel);
+        box.Resize += (_, _) =>
+        {
+            title.Width = note.Width = bar.Width = Math.Max(0, box.ClientSize.Width - 101);
+            if (dateLabel is not null) dateLabel.Width = note.Width;
+        };
         StyleCard(box); content.Controls.Add(box);
     }
 
