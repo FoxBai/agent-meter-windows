@@ -15,6 +15,11 @@ internal static class Program
             RunWebViewSmoke();
             return;
         }
+        if (args.Length == 1 && args[0] == "--activity-ui-smoke")
+        {
+            RunActivitySmoke();
+            return;
+        }
         // 构建机使用纯演示数据生成视觉检查图，不启动采集器或读取用户设置。
         if (args.Length == 2 && args[0] == "--render-demo")
         {
@@ -45,6 +50,18 @@ internal static class Program
             finally { pump.Close(); }
         };
         Application.Run(pump);
+    }
+
+    static void RunActivitySmoke()
+    {
+        using var window = new MeterWindow(demo: true, windowed: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) };
+        window.Shown += async (_, _) =>
+        {
+            try { await window.SyntheticActivitySmokeAsync(); }
+            catch (Exception) { Environment.ExitCode = 1; }
+            finally { window.Close(); }
+        };
+        Application.Run(window);
     }
 }
 
@@ -252,6 +269,7 @@ internal sealed class MeterWindow : Form
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
     CancellationTokenSource? activityCancellation;
+    Func<CancellationToken, Task<string>>? syntheticActivityReader;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
     bool activityBusy;
     DateTimeOffset lastActivityAttempt = DateTimeOffset.MinValue;
@@ -720,14 +738,15 @@ internal sealed class MeterWindow : Form
     }
     async Task RefreshActivityIfNeeded()
     {
-        if (!ActivityRefreshPolicy.CanRefresh(demo, Visible, view == View.Applications, busy, activityBusy,
+        if (!ActivityRefreshPolicy.CanRefresh(demo && syntheticActivityReader is null, Visible, view == View.Applications, busy, activityBusy,
             lastSnapshot is not null, lastActivityAttempt, DateTimeOffset.UtcNow)) return;
         activityBusy = true; lastActivityAttempt = DateTimeOffset.UtcNow;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
         activityCancellation = cancellation; cancellation.CancelAfter(TimeSpan.FromSeconds(45));
         try
         {
-            string output = await RunCollector("--activity-only", cancellation.Token);
+            string output = syntheticActivityReader is null
+                ? await RunCollector("--activity-only", cancellation.Token) : await syntheticActivityReader(cancellation.Token);
             if (cancellation.IsCancellationRequested || IsDisposed || Disposing || !Visible || view != View.Applications || busy || lastSnapshot is null) return;
             var next = JsonNode.Parse(output) as JsonObject;
             string? state = next?["status"]?.GetValue<string>();
@@ -749,6 +768,41 @@ internal sealed class MeterWindow : Form
             if (ReferenceEquals(activityCancellation, cancellation)) activityCancellation = null;
             activityBusy = false;
         }
+    }
+    internal async Task SyntheticActivitySmokeAsync()
+    {
+        if (!demo) throw new InvalidOperationException("demo_required");
+        await RefreshData();
+        int calls = 0; CancellationToken secondToken = default;
+        var pendingResult = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        const string data = """{"status":"available","sources":{"Codex":"available"},"apps":[{"name":"Codex","sessions":1,"recent_updates":1,"last_updated":1800000000}]}""";
+        syntheticActivityReader = token =>
+        {
+            calls++;
+            if (calls == 2) { secondToken = token; return pendingResult.Task.WaitAsync(token); }
+            return Task.FromResult(data);
+        };
+        try
+        {
+            lastActivityAttempt = DateTimeOffset.MinValue;
+            SetView(View.Applications);
+            if (calls != 1 || lastSnapshot is null || !lastSnapshot.Contains("\"recent_updates\":1", StringComparison.Ordinal))
+                throw new InvalidOperationException("activity_refresh_not_applied");
+            await RefreshActivityIfNeeded();
+            if (calls != 1) throw new InvalidOperationException("activity_refresh_too_soon");
+            lastActivityAttempt = DateTimeOffset.UtcNow.AddMinutes(-2);
+            var pending = RefreshActivityIfNeeded();
+            if (calls != 2) throw new InvalidOperationException("activity_refresh_not_started");
+            SetView(View.Usage);
+            await pending;
+            if (!secondToken.IsCancellationRequested || activityBusy) throw new InvalidOperationException("activity_refresh_not_cancelled");
+            Hide(); SetView(View.Applications); lastActivityAttempt = DateTimeOffset.UtcNow.AddMinutes(-2);
+            await RefreshActivityIfNeeded();
+            if (calls != 2) throw new InvalidOperationException("hidden_activity_refresh_started");
+            Show(); SetView(View.Applications);
+            if (calls != 3) throw new InvalidOperationException("activity_refresh_not_resumed");
+        }
+        finally { syntheticActivityReader = null; activityCancellation?.Cancel(); }
     }
     async Task<string> WorkBuddyAccountAsync(CancellationToken cancellation)
     {

@@ -137,6 +137,14 @@ jobs:
             if ($webview.ExitCode -eq 10) { Write-Warning 'WebView2 Runtime is unavailable; isolated profile smoke test skipped.' }
             elseif ($webview.ExitCode -ne 0) { throw "WebView2 profile smoke test failed ($($webview.ExitCode))" }
           } finally { if (-not $webview.HasExited) { Stop-Process -Id $webview.Id } }
+      - name: Smoke test activity refresh lifecycle with synthetic data
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--activity-ui-smoke' -WindowStyle Hidden -PassThru
+          try {
+            if (-not $app.WaitForExit(30000)) { throw 'Activity refresh smoke test timed out' }
+            if ($app.ExitCode -ne 0) { throw "Activity refresh smoke test failed ($($app.ExitCode))" }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id } }
       - name: Render isolated demo previews
         shell: pwsh
         run: |
