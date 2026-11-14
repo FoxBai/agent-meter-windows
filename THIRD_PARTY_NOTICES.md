@@ -69,6 +69,8 @@ Qoder SDK assets remain code from the user's installed Qoder application. Any lo
 
 Windows 版内置的「麻薯」和「比特」精灵图来自上游 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 的 `pets/presets/mochi` 和 `pets/presets/bit`。对应 `pet.json` 将素材标注为 CC0-1.0；清单和原图随源码保留，并作为资源嵌入 Windows 程序。
 
+Windows 网页登录适配使用 Microsoft WebView2 SDK 1.0.4314.35。SDK 许可和第三方声明随 Windows 构建包放在 `licenses/`；WebView2 Runtime 由 Windows 或用户单独提供。
+
 ## Bundled runtime
 
 The macOS release bundles CPython and the PyInstaller bootloader. Their license texts are included in `Agent 用量.app/Contents/Resources/Licenses/`. PyInstaller's license includes an exception allowing distribution of applications built with its bootloader. Build dependencies are pinned in `requirements-build.txt`; no third-party installed application SDKs are bundled.

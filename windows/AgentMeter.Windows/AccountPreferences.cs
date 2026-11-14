@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace AgentMeter.Windows;
 
 /// <summary>只保存账户查询开关，不保存凭据或账户数据。</summary>
-internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bool MiniMax = false, bool DeepSeek = false)
+internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bool MiniMax = false, bool DeepSeek = false, bool WorkBuddy = false)
 {
     public static AccountPreferences Enabled => new(true, true, true);
     public static AccountPreferences Disabled => new(false, false, false);
@@ -20,7 +20,9 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bo
                 ? ReadBoolean(root, "minimax") : false;
             bool deepseek = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("deepseek", out _)
                 ? ReadBoolean(root, "deepseek") : false;
-            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"), minimax, deepseek);
+            bool workbuddy = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("workbuddy", out _)
+                ? ReadBoolean(root, "workbuddy") : false;
+            return new AccountPreferences(ReadBoolean(root, "codex"), ReadBoolean(root, "kimi"), ReadBoolean(root, "claude"), minimax, deepseek, workbuddy);
         }
         catch (FileNotFoundException) { return Enabled; }
         catch (DirectoryNotFoundException) { return Enabled; }
@@ -46,7 +48,8 @@ internal sealed record AccountPreferences(bool Codex, bool Kimi, bool Claude, bo
         bool created = false;
         try
         {
-            var values = new Dictionary<string, bool> { ["codex"] = Codex, ["kimi"] = Kimi, ["claude"] = Claude, ["minimax"] = MiniMax, ["deepseek"] = DeepSeek };
+            var values = new Dictionary<string, bool> { ["codex"] = Codex, ["kimi"] = Kimi, ["claude"] = Claude,
+                ["minimax"] = MiniMax, ["deepseek"] = DeepSeek, ["workbuddy"] = WorkBuddy };
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 created = true;

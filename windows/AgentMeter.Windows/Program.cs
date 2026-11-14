@@ -10,6 +10,11 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        if (args.Length == 1 && args[0] == "--webview-smoke")
+        {
+            RunWebViewSmoke();
+            return;
+        }
         // 构建机使用纯演示数据生成视觉检查图，不启动采集器或读取用户设置。
         if (args.Length == 2 && args[0] == "--render-demo")
         {
@@ -25,6 +30,21 @@ internal static class Program
         using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
         if (!first && !demo) return;
         Application.Run(new MeterContext(demo, args.Contains("--window")));
+    }
+
+    static void RunWebViewSmoke()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "AgentMeterWebSmoke-" + Guid.NewGuid().ToString("N"));
+        using var pump = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000), Size = new Size(1, 1) };
+        pump.Shown += async (_, _) =>
+        {
+            try { using var browser = new WorkBuddyBrowser(directory); await browser.SyntheticSmokeAsync(); }
+            catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException) { Environment.ExitCode = 10; }
+            catch (Exception) { Environment.ExitCode = 1; }
+            finally { pump.Close(); }
+        };
+        Application.Run(pump);
     }
 }
 
@@ -51,7 +71,7 @@ internal sealed class MeterContext : ApplicationContext
         {
             var accounts = new ToolStripMenuItem("账户查询");
             var accountItems = new Dictionary<string, ToolStripMenuItem>();
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek" })
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek", "WorkBuddy" })
             {
                 var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
@@ -79,6 +99,14 @@ internal sealed class MeterContext : ApplicationContext
                 if (editor.ShowDialog(window) != DialogResult.OK) return;
                 bool enabled = !editor.Deleted;
                 if (window.SetAccountEnabled("DeepSeek", enabled)) accountItems["DeepSeek"].Checked = enabled;
+            });
+            menu.Items.Add("登录 WorkBuddy", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new WorkBuddyLoginDialog(window.WorkBuddyBrowser, window.CancelAccountRequests);
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                bool enabled = !editor.Cleared;
+                if (window.SetAccountEnabled("WorkBuddy", enabled)) accountItems["WorkBuddy"].Checked = enabled;
             });
             var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
@@ -216,6 +244,7 @@ internal sealed class MeterWindow : Form
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
+    readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
     readonly QuotaAlerts quotaAlerts = new();
     readonly bool demo;
     AccountPreferences preferences;
@@ -225,6 +254,8 @@ internal sealed class MeterWindow : Form
     View view = View.Accounts;
     string? lastSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
+    internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
+    public void CancelAccountRequests() => accountCancellation?.Cancel();
     public event Action<string>? SnapshotUpdated;
     public void ShowNotice(string message) { if (!IsDisposed && !Disposing) status.Text = message; }
 
@@ -348,11 +379,23 @@ internal sealed class MeterWindow : Form
             picture.Save(Path.Combine(directory, "deepseek-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
             dialog.Close();
         }
+        var workbuddy = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        workbuddy["other_accounts"] = JsonNode.Parse("""{"WorkBuddy":{"status":"available","quota":{"value":[{"bucket":"credits","remaining_percent":25}]},"credits":{"value":{"balance":"25","total":"100","frozen":"0"}}}}""");
+        using (var snapshot = JsonDocument.Parse(workbuddy.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-workbuddy-narrow");
+        using (var dialog = new WorkBuddyLoginDialog(workBuddyBrowser, () => { }, preview: true) { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "workbuddy-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         Hide();
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); }
+        if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -401,7 +444,7 @@ internal sealed class MeterWindow : Form
     public bool AccountEnabled(string provider) => provider switch
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
-        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, _ => false
+        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, "WorkBuddy" => preferences.WorkBuddy, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -453,7 +496,7 @@ internal sealed class MeterWindow : Form
         {
             "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
             "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
-            "DeepSeek" => preferences with { DeepSeek = enabled }, _ => preferences
+            "DeepSeek" => preferences with { DeepSeek = enabled }, "WorkBuddy" => preferences with { WorkBuddy = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -484,6 +527,7 @@ internal sealed class MeterWindow : Form
         if (!preferences.Claude) others["Claude Code"] = Disabled();
         if (!preferences.MiniMax) others["MiniMax Code"] = Disabled();
         if (!preferences.DeepSeek) others["DeepSeek API"] = Disabled();
+        if (!preferences.WorkBuddy) others["WorkBuddy"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -521,6 +565,7 @@ internal sealed class MeterWindow : Form
                 accountInput = null;
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
+                var workbuddyTask = preferences.WorkBuddy ? WorkBuddyAccountAsync(accountCancellation.Token) : null;
                 Task<string>? deepseekTask = null;
                 if (preferences.DeepSeek)
                 {
@@ -546,6 +591,7 @@ internal sealed class MeterWindow : Form
                 }
                 if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
                 combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" };
+                combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = preferences.WorkBuddy ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -589,6 +635,14 @@ internal sealed class MeterWindow : Form
                 { combined["quota_cards"] = new JsonObject { ["status"] = "error" }; }
                 ApplyAccountPreferences(combined);
                 using (var cardsSnapshot = JsonDocument.Parse(combined.ToJsonString())) Render(cardsSnapshot.RootElement);
+                if (workbuddyTask is not null)
+                {
+                    try { combined["other_accounts"]!["WorkBuddy"] = JsonNode.Parse(await workbuddyTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["WorkBuddy"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var workbuddySnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(workbuddySnapshot.RootElement);
+                }
                 if (forecastTask is not null)
                 {
                     try { combined["forecast"] = JsonNode.Parse(await forecastTask); }
@@ -614,6 +668,26 @@ internal sealed class MeterWindow : Form
                 if (refreshQueued) { refreshQueued = false; _ = RefreshData(); }
             }
         }
+    }
+    async Task<string> WorkBuddyAccountAsync(CancellationToken cancellation)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            string? session = await workBuddyBrowser.SessionInputAsync(timeout.Token).WaitAsync(timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            var task = RunCollector("--workbuddy-only", timeout.Token, session);
+            session = null;
+            return await task;
+        }
+        catch (Microsoft.Web.WebView2.Core.WebView2RuntimeNotFoundException)
+        { return """{"status":"unavailable","reason":"workbuddy_runtime_missing"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && WebViewSafety.IsIsolationFailure(ex))
+        { return """{"status":"unavailable","reason":"workbuddy_profile_unsafe"}"""; }
+        catch (Exception ex) when (!cancellation.IsCancellationRequested && ex is System.Runtime.InteropServices.COMException or
+            InvalidOperationException or IOException or UnauthorizedAccessException or System.Security.SecurityException or OperationCanceledException)
+        { return """{"status":"unavailable","reason":"workbuddy_session_unavailable"}"""; }
     }
     static async Task<string> RunCollector(string mode, CancellationToken shutdown, string? accountInput = null)
     {
@@ -746,6 +820,7 @@ internal sealed class MeterWindow : Form
         }
         else AddMiniMaxAccount(minimaxAccount, "");
         AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
+        AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"));
         }
         else if (view == View.Applications) AddApplications(GetValue(root, "activity"));
         else if (view == View.Usage)
@@ -1012,6 +1087,42 @@ internal sealed class MeterWindow : Form
         };
         AddCard("DEEPSEEK API", "暂时无法获取余额", note, null);
     }
+    void AddWorkBuddyAccount(JsonElement account)
+    {
+        string status = GetString(account, "status", "disabled");
+        if (status == "disabled") return;
+        if (status == "loading") { AddCard("WORKBUDDY", "正在读取账户", "通过应用内独立登录资料查询", null); return; }
+        var quota = GetValue(GetValue(account, "quota"), "value");
+        var credits = GetValue(GetValue(account, "credits"), "value");
+        if (status is "available" or "partial")
+        {
+            bool shown = false;
+            if (quota.ValueKind == JsonValueKind.Array)
+            {
+                var rows = new List<QuotaRow>();
+                foreach (var item in quota.EnumerateArray())
+                    rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), ResetNote(item)));
+                if (rows.Count > 0) { AddQuotaGroup("WORKBUDDY", rows); shown = true; }
+            }
+            string balance = GetString(credits, "balance", ""), total = GetString(credits, "total", ""), frozen = GetString(credits, "frozen", "");
+            if (balance.Length is > 0 and <= 40 && total.Length <= 40 && frozen.Length <= 40)
+            {
+                string details = total.Length > 0 ? "总额 " + total + (frozen.Length > 0 ? " · 冻结 " + frozen : "") : "账户服务提供的积分余额";
+                AddCard("WORKBUDDY · 积分余额", balance + " 积分", details, null); shown = true;
+            }
+            if (shown) return;
+        }
+        string note = GetString(account, "reason", "") switch
+        {
+            "workbuddy_session_missing" => "请在托盘菜单登录 WorkBuddy",
+            "workbuddy_runtime_missing" => "缺少 WebView2 Runtime，请安装后重试",
+            "workbuddy_profile_unsafe" => "无法确认登录资料隔离，请检查 WebView2 系统策略",
+            "workbuddy_session_unavailable" or "workbuddy_session_invalid" => "无法读取应用内登录资料，请重新登录",
+            "not_authenticated" => "登录可能已过期，请重新登录",
+            _ => "请检查登录状态和网络后刷新"
+        };
+        AddCard("WORKBUDDY", "暂时无法获取账户", note, null);
+    }
     void AddCalendarReport(JsonElement report)
     {
         AddHeading("用量报告", "北京时间 · 本机账本相加，可能存在重叠");
@@ -1089,6 +1200,7 @@ internal sealed class MeterWindow : Form
         AddGauge("Codex", GetValue(root, "account"));
         AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
         AddGauge("Claude", GetValue(GetValue(root, "other_accounts"), "Claude Code"));
+        AddGauge("WorkBuddy", GetValue(GetValue(root, "other_accounts"), "WorkBuddy"));
         var minimax = GetValue(GetValue(root, "other_accounts"), "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {

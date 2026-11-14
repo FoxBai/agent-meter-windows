@@ -10,11 +10,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <EmbeddedResource Include="..\assets\agent-meter.ico" LogicalName="AgentMeter.Icon" />
     <EmbeddedResource Include="..\..\pets\presets\mochi\pet.json" LogicalName="AgentMeter.Pet.mochi.pet.json" />
     <EmbeddedResource Include="..\..\pets\presets\bit\pet.json" LogicalName="AgentMeter.Pet.bit.pet.json" />
     <EmbeddedResource Include="..\..\pets\presets\mochi\sprites\*.png" LogicalName="AgentMeter.Pet.mochi.%(Filename).png" />
     <EmbeddedResource Include="..\..\pets\presets\bit\sprites\*.png" LogicalName="AgentMeter.Pet.bit.%(Filename).png" />
   </ItemGroup>
+
+  <!-- SDK 默认同时引用 WPF；本程序只使用 WinForms，避免无关程序集冲突。 -->
+  <Target Name="RemoveUnusedWebViewWpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

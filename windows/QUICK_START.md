@@ -2,7 +2,7 @@
 
 1. 解压后保留完整文件夹，运行 `AgentMeter.Windows.exe`。
 2. 在 Windows 通知区域找到 Agent Meter 图标；如果没有看到，可展开隐藏图标。
-3. 左键显示或隐藏面板，右键可刷新、退出，或在「账户查询」中分别调整 Codex、Kimi、Claude、MiniMax 额度读取。MiniMax 默认关闭；开关只影响账户查询，不影响本机历史。
+3. 左键显示或隐藏面板，右键可刷新、退出，或在「账户查询」中分别调整账户读取。MiniMax、DeepSeek 和主分支实验功能 WorkBuddy 默认关闭；开关只影响账户查询，不影响本机历史。
 4. 右键菜单「界面风格」可选择七种配色；当前 Windows 版的材质和动效仍在完善。
 5. 右键菜单「自定义模型价格」可覆盖内置美元价格，单位是每百万 Token。价格估算不是实际账单；损坏的价格文件会导致金额隐藏。
 6. 「低额度提醒」默认关闭；开启后，账户额度低于 20% 时程序会尝试发送 Windows 通知，通知显示取决于系统设置。
@@ -10,10 +10,11 @@
 8. 「第三方重置预测」默认关闭；开启后才访问三个第三方公开网站。预测不是个人账户额度的重置时间，真实网站和页面交互仍需验证。
 9. 「收集」页从可读取的本机逐日账本计算部分徽章，记录不完整或重复时结果可能有偏差；5 小时和 7 天额度达到阈值时会记录掉落卡片。额度窗口状态及卡片数量保存在 `%LOCALAPPDATA%\AgentMeter\collection.json`；其他徽章和卡片仍在移植。
 10. 「设置 DeepSeek API 密钥」用于查询 API 账户余额，密钥保存在 Windows 凭据管理器，保存后启用查询；可在同一窗口删除密钥。该功能只经模拟测试，真实账户和窗口交互尚待验证。
+11. 主分支实验功能「登录 WorkBuddy」需要另行安装 Microsoft Edge WebView2 Runtime。登录资料保存在应用独立目录；取消不会清除，可用「清除本地登录」清除浏览数据，但不会在服务端退出。查询默认关闭，真实账户和部分登录方式尚未验证；Alpha 7 不含此功能。
 
 本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。
 
-Codex、Kimi、Claude 账户查询默认开启，MiniMax 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。
+Codex、Kimi、Claude 账户查询默认开启，MiniMax、DeepSeek 和 WorkBuddy 默认关闭；开关状态保存在 `%LOCALAPPDATA%\AgentMeter\preferences.json`，不包含凭据。Codex 额度查询使用本机已有的 Codex 安装和登录状态。如果 Claude Code 的本地订阅凭据文件存在，程序会在内存中读取访问令牌并通过 HTTPS 向 Anthropic 用量接口查询额度，不修改或刷新登录；该功能目前仅经模拟测试。Kimi 额度查询只连接已运行的本机 Kimi 服务，目前同样仅经模拟测试。
 
 MiniMax 支持通过「管理 MiniMax 账户」添加最多 5 个账户，密钥保存在 Windows 凭据管理器，账户名称和区域保存在本机账户列表。主动开启查询后，密钥通过本地子进程标准输入传递，并通过 HTTPS 发往所选区域的 MiniMax 用量接口。账户列表文件不存在时，也可使用 `MINIMAX_TOKEN_PLAN_KEY` 与 `MINIMAX_REGION` 环境变量；通过界面清空账户后不会自动回退。关闭来源时程序会尝试中止当前账户查询，已发出的请求无法撤回。Windows 界面读取支持的本机历史，不通过该界面上传历史记录。详情见项目首页及 `THIRD_PARTY_NOTICES.md`；依赖许可文本位于 `licenses/`。
 

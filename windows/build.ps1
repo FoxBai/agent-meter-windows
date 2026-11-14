@@ -26,4 +26,13 @@ Copy-Item -LiteralPath (Join-Path $site 'tzdata-2026.6.dist-info\licenses\LICENS
 Copy-Item -LiteralPath (Join-Path $site 'tzdata-2026.6.dist-info\licenses\licenses\LICENSE_APACHE') -Destination (Join-Path $licenses 'tzdata-APACHE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $dotnetDir 'LICENSE.txt') -Destination (Join-Path $licenses 'dotnet-LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $dotnetDir 'ThirdPartyNotices.txt') -Destination (Join-Path $licenses 'dotnet-ThirdPartyNotices.txt') -Force
+$assets = Get-Content -Raw -Encoding UTF8 'windows\AgentMeter.Windows\obj\project.assets.json' | ConvertFrom-Json
+$webviewPackage = $null
+foreach ($packageRoot in $assets.packageFolders.PSObject.Properties.Name) {
+    $candidate = Join-Path $packageRoot 'microsoft.web.webview2\1.0.4314.35'
+    if (Test-Path -LiteralPath (Join-Path $candidate 'LICENSE.txt')) { $webviewPackage = $candidate; break }
+}
+if (-not $webviewPackage) { throw 'WebView2 SDK license not found.' }
+Copy-Item -LiteralPath (Join-Path $webviewPackage 'LICENSE.txt') -Destination (Join-Path $licenses 'WebView2-SDK-LICENSE.txt') -Force
+Copy-Item -LiteralPath (Join-Path $webviewPackage 'NOTICE.txt') -Destination (Join-Path $licenses 'WebView2-SDK-NOTICE.txt') -Force
 Write-Host 'Built windows\dist\AgentMeter\AgentMeter.Windows.exe'

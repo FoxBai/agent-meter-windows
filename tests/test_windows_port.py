@@ -24,6 +24,21 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_workbuddy_uses_only_explicit_session_and_fixed_endpoint(self):
+        payload = {'code': 0, 'data': {'SubscriptionPackageName': '模拟套餐', 'Packages': [
+            {'CapacityUnit': 'credits', 'CycleTotalCapacity': '100', 'CycleRemainCapacity': '25', 'CycleFrozenCapacity': '0'}]}}
+        with patch('agent_meter.web_sources.post_json', return_value=payload) as request:
+            with self.assertRaises(SourceError):
+                backend.workbuddy_balance(None, 1800000000)
+            request.assert_not_called()
+            result = backend.workbuddy_balance({'cookie': 'session=synthetic-private', 'user_agent': 'SyntheticBrowser/1.0'}, 1800000000)
+            self.assertEqual(request.call_args.args[0], 'https://www.workbuddy.cn/billing/meter/get-user-resource-summary')
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 25)
+            self.assertNotIn('synthetic-private', json.dumps(result))
+            self.assertNotIn('SyntheticBrowser', json.dumps(result))
+            with self.assertRaises(SourceError):
+                backend.workbuddy_balance({'cookie': 'session=x\r\nheader=y', 'user_agent': 'SyntheticBrowser/1.0'}, 1800000000)
+
     def test_deepseek_balance_requires_explicit_key_and_uses_official_endpoint(self):
         payload = {'is_available': True, 'balance_infos': [{'currency': 'CNY', 'total_balance': '110.00',
                    'granted_balance': '10.00', 'topped_up_balance': '100.00'}]}

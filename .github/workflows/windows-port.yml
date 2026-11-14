@@ -62,6 +62,8 @@ jobs:
           $deepseek = '{"key":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --deepseek-only | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $deepseek.reason -ne 'deepseek_credential_not_connected') { throw 'DeepSeek opt-in check failed' }
           $env:DEEPSEEK_API_KEY = ''
+          $workbuddy = '{"session":null}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --workbuddy-only | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $workbuddy.reason -ne 'workbuddy_session_missing') { throw 'WorkBuddy opt-in check failed' }
           $fixture = @'
           import json, sqlite3, sys, time
           from datetime import datetime, timezone
@@ -122,11 +124,21 @@ jobs:
           } finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id }
           }
+      - name: Smoke test isolated WebView profile
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath './windows/dist/AgentMeter/licenses/WebView2-SDK-LICENSE.txt')) { throw 'WebView2 SDK license missing' }
+          $webview = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--webview-smoke' -WindowStyle Hidden -PassThru
+          try {
+            if (-not $webview.WaitForExit(90000)) { throw 'WebView2 profile smoke test timed out' }
+            if ($webview.ExitCode -eq 10) { Write-Warning 'WebView2 Runtime is unavailable; isolated profile smoke test skipped.' }
+            elseif ($webview.ExitCode -ne 0) { throw "WebView2 profile smoke test failed ($($webview.ExitCode))" }
+          } finally { if (-not $webview.HasExited) { Stop-Process -Id $webview.Id } }
       - name: Render isolated demo previews
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 48) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 50) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

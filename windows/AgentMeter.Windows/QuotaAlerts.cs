@@ -16,6 +16,7 @@ internal sealed class QuotaAlerts
         var other = Field(snapshot, "other_accounts");
         Inspect("Kimi", Field(other, "Kimi Code"), messages, now);
         Inspect("Claude", Field(other, "Claude Code"), messages, now);
+        Inspect("WorkBuddy", Field(other, "WorkBuddy"), messages, now);
         var minimax = Field(other, "MiniMax Code");
         if (minimax.ValueKind == JsonValueKind.Array)
         {
@@ -45,7 +46,7 @@ internal sealed class QuotaAlerts
             var minutes = Field(quota, "window_minutes");
             string period = minutes.ValueKind == JsonValueKind.Number && minutes.TryGetInt32(out int duration)
                 ? duration == 300 ? "5 小时" : duration == 10080 ? "7 天" : $"{duration} 分钟"
-                : bucket switch { "limit5h" or "5h" => "5 小时", "limit7d" or "week" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", _ => bucket };
+                : bucket switch { "limit5h" or "5h" => "5 小时", "limit7d" or "week" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", "credits" => "积分额度", _ => bucket };
             string key = provider + ":" + bucket + ":" + period;
             var resetValue = Field(Field(quota, "resets_at"), "epoch_seconds");
             long? reset = resetValue.ValueKind == JsonValueKind.Number && resetValue.TryGetDouble(out double epoch) &&

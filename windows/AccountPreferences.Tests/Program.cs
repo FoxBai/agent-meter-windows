@@ -47,15 +47,42 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek || oldPreferences.WorkBuddy)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
-    var deepseekPreferences = oldPreferences with { DeepSeek = true };
+    var deepseekPreferences = oldPreferences with { DeepSeek = true, WorkBuddy = true };
     deepseekPreferences.Save(directory);
     if (AccountPreferences.Load(directory) != deepseekPreferences) throw new InvalidOperationException("DeepSeek 开关保存失败");
     if (!DeepSeekKeyStore.IsValid("sk-synthetic") || DeepSeekKeyStore.IsValid("bad key") || DeepSeekKeyStore.IsValid("bad\nkey"))
         throw new InvalidOperationException("DeepSeek 密钥格式校验失败");
     using (var secretInput = JsonDocument.Parse(DeepSeekKeyStore.Input("bad key")))
         if (secretInput.RootElement.GetProperty("key").ValueKind != JsonValueKind.Null) throw new InvalidOperationException("无效密钥不应传给后端");
+    var browserCookies = new[] {
+        new WebCookieFilter.Cookie("session", "synthetic-value", ".workbuddy.cn", "/"),
+        new WebCookieFilter.Cookie("billing", "synthetic-billing", "www.workbuddy.cn", "/billing"),
+        new WebCookieFilter.Cookie("foreign", "must-not-send", ".other.example", "/"),
+        new WebCookieFilter.Cookie("wrongpath", "must-not-send", "www.workbuddy.cn", "/billing-other") };
+    string? cookieHeader = WebCookieFilter.WorkBuddyHeader(browserCookies);
+    if (cookieHeader != "session=synthetic-value; billing=synthetic-billing") throw new InvalidOperationException("登录 Cookie 的域或路径筛选不正确");
+    if (WebCookieFilter.WorkBuddyHeader([new WebCookieFilter.Cookie("session", "bad\r\nvalue", ".workbuddy.cn", "/")]) is not null ||
+        WebCookieFilter.WorkBuddyHeader([new WebCookieFilter.Cookie("session", "safe", ".evilworkbuddy.cn", "/")]) is not null)
+        throw new InvalidOperationException("非法 Cookie 不应发送");
+    if (!WorkBuddyNavigation.Allowed("https://www.workbuddy.cn/profile/plans-usage") ||
+        !WorkBuddyNavigation.Allowed("https://xui.ptlogin2.qq.com/") || !WorkBuddyNavigation.IsWorkBuddy("https://www.workbuddy.cn/"))
+        throw new InvalidOperationException("合法登录网址应可访问");
+    foreach (string unsafeUrl in new[] { "http://www.workbuddy.cn/", "https://workbuddy.cn.evil.example/", "https://user@www.workbuddy.cn/", "file:///C:/secret", "https://127.0.0.1/" })
+        if (WorkBuddyNavigation.Allowed(unsafeUrl)) throw new InvalidOperationException("不允许未知登录网址");
+    if (WebViewSafety.ContainsOverride([null, ""]) || !WebViewSafety.ContainsOverride([null, "--remote-debugging-port=1"]) ||
+        !WebViewSafety.SameDirectory(directory, directory + Path.DirectorySeparatorChar) ||
+        WebViewSafety.SameDirectory(directory, Path.Combine(directory, "different")))
+        throw new InvalidOperationException("WebView2 资料隔离检查失败");
+    string? previousOverride = Environment.GetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER");
+    try
+    {
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", Path.Combine(directory, "synthetic-profile"));
+        try { WebViewSafety.EnsureNoOverrides(); throw new InvalidOperationException("应拒绝 WebView2 资料目录覆盖"); }
+        catch (InvalidOperationException ex) when (ex.Message == "webview_override_configured") { }
+    }
+    finally { Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", previousOverride); }
     var fakeVault = new FakeMiniMaxVault();
     if (MiniMaxAccountInput.Build(directory, fakeVault) is not null)
         throw new InvalidOperationException("没有账户列表时应保留环境变量模式");
@@ -183,6 +210,11 @@ try
     } });
     if (!new QuotaAlerts().Evaluate(minimax, now).Single().Contains("5 小时"))
         throw new InvalidOperationException("MiniMax 额度提醒应显示中文周期");
+    var workbuddy = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+        ["WorkBuddy"] = new { status = "available", quota = new { value = new[] { new { bucket = "credits", remaining_percent = 10 } } } }
+    } });
+    if (!new QuotaAlerts().Evaluate(workbuddy, now).Single().Contains("积分额度"))
+        throw new InvalidOperationException("WorkBuddy 提醒应显示积分额度");
     var multiMiniMax = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
         ["MiniMax Code"] = new[] {
             new { label = "甲", status = "available", quota = new { value = new[] { new { bucket = "5h", remaining_percent = 10 } } } },
