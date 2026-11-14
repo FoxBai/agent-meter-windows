@@ -346,6 +346,10 @@ internal sealed class MeterWindow : Form
             .Any(label => label.Text == "本机 Token · 未按账户区分"))
             throw new InvalidOperationException("account_local_usage_missing");
         SavePreview("aurora-account-local-detail");
+        content.AutoScrollPosition = new Point(0, 230); Application.DoEvents();
+        if (content.AutoScrollPosition.Y == 0) throw new InvalidOperationException("account_local_scroll_failed");
+        SavePreview("aurora-account-local-scrolled");
+        content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
@@ -547,9 +551,12 @@ internal sealed class MeterWindow : Form
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
                 var daily = new JsonArray();
+                int[] demoDailyThousands = [324, 480, 550, 710, 280, 820, 650, 840, 1030, 610,
+                    680, 810, 910, 930, 1230, 850, 660, 1050, 930, 880,
+                    1070, 930, 790, 1150, 1240, 1050, 910, 980, 1030, 1426];
                 for (int index = 0; index < 30; index++)
                     daily.Add(new JsonObject { ["date"] = new DateOnly(2026, 10, 16).AddDays(index).ToString("yyyy-MM-dd"),
-                        ["tokens"] = 100000 + (index * 7919 % 9) * 85000 });
+                        ["tokens"] = demoDailyThousands[index] * 1000 });
                 sample["history"]!["Codex"]!["value"]!["daily_trend"] = new JsonObject { ["days"] = daily, ["incomplete"] = false };
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
@@ -1407,7 +1414,7 @@ internal sealed class MeterWindow : Form
             if (usage.Today.HasValue) parts.Add("今日 " + FormatNumber(usage.Today.Value));
             if (usage.ThirtyDays.HasValue) parts.Add("近 30 天 " + FormatNumber(usage.ThirtyDays.Value));
             if (usage.All.HasValue) parts.Add("累计 " + FormatNumber(usage.All.Value));
-            var summary = new Label { Text = string.Join("  ·  ", parts), ForeColor = Primary,
+            var summary = new Label { Text = parts.Count == 0 ? "本机统计汇总未提供" : string.Join("  ·  ", parts), ForeColor = Primary,
                 Location = new Point(16, top + 34), Height = 22, AutoEllipsis = true };
             var note = new Label { Text = usage.Incomplete ? "部分本机记录不完整" : "与账户额度分别统计",
                 Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(16, top + 57), Height = 20, AutoEllipsis = true };
