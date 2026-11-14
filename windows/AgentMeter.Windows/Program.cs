@@ -550,16 +550,17 @@ internal sealed class MeterWindow : Form
         var account = GetValue(root, "account"); var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
         {
+            var rows = new List<QuotaRow>();
             foreach (var q in quotas.EnumerateArray())
             {
                 string bucket = GetString(q, "bucket", "Codex"), window = GetString(q, "window", "");
                 var minutes = GetNumber(q, "window_minutes");
                 string period = minutes == 300 ? "5 小时" : minutes == 10080 ? "7 天" : minutes.HasValue ? $"{minutes:0} 分钟" : window;
                 double? remaining = GetNumber(q, "remaining_percent");
-                double? epoch = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
-                string detail = epoch.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)epoch.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
-                AddCard(bucket.ToUpperInvariant() + "  ·  " + period, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", detail, remaining);
+                string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
+                rows.Add(new QuotaRow(prefix + period, remaining, ResetNote(q)));
             }
+            AddQuotaGroup("CODEX", rows);
         }
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
@@ -591,6 +592,7 @@ internal sealed class MeterWindow : Form
             var kimiQuotas = GetValue(GetValue(kimiAccount, "quota"), "value");
             if (kimiQuotas.ValueKind == JsonValueKind.Array && kimiQuotas.GetArrayLength() > 0)
             {
+                var rows = new List<QuotaRow>();
                 foreach (var q in kimiQuotas.EnumerateArray())
                 {
                     string bucket = GetString(q, "bucket", "");
@@ -600,10 +602,9 @@ internal sealed class MeterWindow : Form
                     string label = bucket switch { "limit5h" => "5 小时", "limit7d" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", _ => bucket };
                     if (duration.HasValue) label = $"{duration:0.##} " + (unit switch { "hour" => "小时", "day" => "天", "week" => "周", "month" => "月", "minute" => "分钟", "second" => "秒", _ => unit });
                     double? remaining = GetNumber(q, "remaining_percent");
-                    double? reset = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
-                    string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
-                    AddCard("KIMI CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+                    rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
                 }
+                AddQuotaGroup("KIMI CODE", rows);
             }
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
             else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
@@ -615,15 +616,15 @@ internal sealed class MeterWindow : Form
         var claudeQuotas = GetValue(GetValue(claudeAccount, "quota"), "value");
         if (claudeQuotas.ValueKind == JsonValueKind.Array)
         {
+            var rows = new List<QuotaRow>();
             foreach (var q in claudeQuotas.EnumerateArray())
             {
                 string bucket = GetString(q, "bucket", "");
                 string label = bucket switch { "five_hour" => "5 小时", "seven_day" => "7 天", "seven_day_opus" => "7 天 · Opus", "seven_day_sonnet" => "7 天 · Sonnet", "seven_day_oauth_apps" => "7 天 · OAuth 应用", _ => bucket };
                 double? remaining = GetNumber(q, "remaining_percent");
-                double? reset = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
-                string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
-                AddCard("CLAUDE CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+                rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
             }
+            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows);
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
@@ -769,14 +770,14 @@ internal sealed class MeterWindow : Form
         var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
         {
+            var rows = new List<QuotaRow>();
             foreach (var quota in quotas.EnumerateArray())
             {
                 string label = GetString(quota, "bucket", "") switch { "5h" => "5 小时", "week" => "7 天", var other => other };
                 double? remaining = GetNumber(quota, "remaining_percent");
-                double? reset = GetNumber(GetValue(quota, "resets_at"), "epoch_seconds");
-                string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
-                AddCard(prefix + " · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+                rows.Add(new QuotaRow(label, remaining, ResetNote(quota)));
             }
+            AddQuotaGroup(prefix, rows);
         }
         else if (GetString(account, "status", "") is "unavailable" or "error")
             AddCard(prefix, "暂时无法获取额度", Reason(account), null);
@@ -968,6 +969,47 @@ internal sealed class MeterWindow : Form
         box.Resize += (_, _) => chart.Width = Math.Max(0, box.ClientSize.Width - 28); box.Controls.Add(chart);
         StyleCard(box); content.Controls.Add(box);
     }
+    sealed record QuotaRow(string Name, double? Remaining, string Reset);
+
+    static string ResetNote(JsonElement quota)
+    {
+        double? epoch = GetNumber(GetValue(quota, "resets_at"), "epoch_seconds");
+        if (!epoch.HasValue || !double.IsFinite(epoch.Value) || epoch.Value < 0 || epoch.Value > 253402300799)
+            return "重置时间未提供";
+        try { return "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)epoch.Value).LocalDateTime.ToString("MM-dd HH:mm"); }
+        catch (ArgumentException) { return "重置时间未提供"; }
+    }
+
+    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows)
+    {
+        int shown = Math.Min(rows.Count, 40);
+        if (shown == 0) return;
+        var box = new RoundedCard(theme) { Height = 45 + shown * 70, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = provider, AutoSize = true, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), ForeColor = Primary, Location = new Point(15, 11) });
+        for (int index = 0; index < shown; index++)
+        {
+            var row = rows[index];
+            int top = 43 + index * 70;
+            string label = new string(row.Name.Where(c => !char.IsControl(c)).Take(80).ToArray());
+            if (label.Length == 0) label = "额度窗口";
+            var name = new Label { Text = label, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(16, top) };
+            double? remaining = row.Remaining is double number && double.IsFinite(number) && number >= 0 && number <= 100 ? number : null;
+            var amount = new Label { Text = remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", AutoSize = true,
+                Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Primary, Location = new Point(0, top) };
+            var note = new Label { Text = row.Reset, AutoSize = true, Font = new Font(Font.FontFamily, 9F), ForeColor = Muted, Location = new Point(16, top + 40) };
+            var bar = new MeterBar(theme) { Value = remaining ?? 0, Visible = remaining.HasValue, Location = new Point(16, top + 27), Height = 5 };
+            box.Controls.AddRange([name, amount, note, bar]);
+            box.Resize += (_, _) =>
+            {
+                amount.Left = Math.Max(16, box.ClientSize.Width - amount.Width - 16);
+                name.Width = Math.Max(0, amount.Left - name.Left - 8);
+                bar.Width = Math.Max(0, box.ClientSize.Width - 32);
+            };
+        }
+        StyleCard(box); content.Controls.Add(box);
+        if (rows.Count > shown) AddCard(provider, "部分额度未显示", $"仅展示前 {shown} 个窗口", null);
+    }
+
     void AddCard(string name, string value, string detail, double? progress, string? extra = null, string? cost = null)
     {
         var box = new RoundedCard(theme) { Height = progress.HasValue ? 112 : cost is not null ? (extra is null ? 120 : 146) : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
