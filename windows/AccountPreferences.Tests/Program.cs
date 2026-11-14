@@ -29,8 +29,10 @@ try
         if (CredentialVault.Read("test", credentialId) != "模拟密钥-B") throw new InvalidOperationException("凭据更新失败");
         CredentialVault.Delete("test", credentialId);
         if (CredentialVault.Read("test", credentialId) is not null) throw new InvalidOperationException("凭据删除失败");
+        CredentialVault.Write("deepseek", credentialId, "synthetic-key");
+        if (CredentialVault.Read("deepseek", credentialId) != "synthetic-key") throw new InvalidOperationException("DeepSeek 凭据读取失败");
     }
-    finally { CredentialVault.Delete("test", credentialId); }
+    finally { CredentialVault.Delete("test", credentialId); CredentialVault.Delete("deepseek", credentialId); }
     if (AccountPreferences.Load(directory) != AccountPreferences.Enabled)
         throw new InvalidOperationException("首次运行应启用账户查询");
     var changed = new AccountPreferences(false, true, false);
@@ -45,8 +47,15 @@ try
         throw new InvalidOperationException("账户开关未正确覆盖");
     File.WriteAllText(Path.Combine(directory, "preferences.json"), "{\"codex\":true,\"kimi\":false,\"claude\":true}");
     var oldPreferences = AccountPreferences.Load(directory);
-    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax)
+    if (!oldPreferences.Codex || oldPreferences.Kimi || !oldPreferences.Claude || oldPreferences.MiniMax || oldPreferences.DeepSeek)
         throw new InvalidOperationException("旧设置兼容或新增来源默认关闭失败");
+    var deepseekPreferences = oldPreferences with { DeepSeek = true };
+    deepseekPreferences.Save(directory);
+    if (AccountPreferences.Load(directory) != deepseekPreferences) throw new InvalidOperationException("DeepSeek 开关保存失败");
+    if (!DeepSeekKeyStore.IsValid("sk-synthetic") || DeepSeekKeyStore.IsValid("bad key") || DeepSeekKeyStore.IsValid("bad\nkey"))
+        throw new InvalidOperationException("DeepSeek 密钥格式校验失败");
+    using (var secretInput = JsonDocument.Parse(DeepSeekKeyStore.Input("bad key")))
+        if (secretInput.RootElement.GetProperty("key").ValueKind != JsonValueKind.Null) throw new InvalidOperationException("无效密钥不应传给后端");
     var fakeVault = new FakeMiniMaxVault();
     if (MiniMaxAccountInput.Build(directory, fakeVault) is not null)
         throw new InvalidOperationException("没有账户列表时应保留环境变量模式");

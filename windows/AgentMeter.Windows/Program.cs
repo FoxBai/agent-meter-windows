@@ -50,10 +50,12 @@ internal sealed class MeterContext : ApplicationContext
         if (!demo)
         {
             var accounts = new ToolStripMenuItem("账户查询");
-            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax" })
+            var accountItems = new Dictionary<string, ToolStripMenuItem>();
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude", "MiniMax", "DeepSeek" })
             {
-                var item = new ToolStripMenuItem(provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
+                var item = new ToolStripMenuItem(provider == "DeepSeek" ? "DeepSeek API 余额" : provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
                 item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
+                accountItems[provider] = item;
                 accounts.DropDownItems.Add(item);
             }
             menu.Items.Add(accounts);
@@ -69,6 +71,14 @@ internal sealed class MeterContext : ApplicationContext
                 using var editor = new MiniMaxAccountsDialog(AccountPreferences.DefaultDirectory);
                 editor.ShowDialog(window);
                 if (editor.Changed) await window.RefreshAfterAccountChange();
+            });
+            menu.Items.Add("设置 DeepSeek API 密钥", null, (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new DeepSeekKeyDialog();
+                if (editor.ShowDialog(window) != DialogResult.OK) return;
+                bool enabled = !editor.Deleted;
+                if (window.SetAccountEnabled("DeepSeek", enabled)) accountItems["DeepSeek"].Checked = enabled;
             });
             var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
             alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
@@ -324,6 +334,20 @@ internal sealed class MeterWindow : Form
         many["other_accounts"]!["MiniMax Code"] = accounts;
         using (var snapshot = JsonDocument.Parse(many.ToJsonString())) Render(snapshot.RootElement);
         SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
+        // 仅在隔离演示预览中显示虚构余额，不读取或保存凭据。
+        var deepseek = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        deepseek["account"] = new JsonObject { ["status"] = "disabled" };
+        deepseek["other_accounts"] = JsonNode.Parse("""{"DeepSeek API":{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}}""");
+        using (var snapshot = JsonDocument.Parse(deepseek.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-deepseek-narrow");
+        using (var dialog = new DeepSeekKeyDialog { StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000) })
+        {
+            dialog.Show(); Application.DoEvents();
+            using var picture = new Bitmap(dialog.Width, dialog.Height);
+            dialog.DrawToBitmap(picture, new Rectangle(Point.Empty, picture.Size));
+            picture.Save(Path.Combine(directory, "deepseek-dialog.png"), System.Drawing.Imaging.ImageFormat.Png);
+            dialog.Close();
+        }
         Hide();
     }
     protected override void Dispose(bool disposing)
@@ -376,7 +400,8 @@ internal sealed class MeterWindow : Form
 
     public bool AccountEnabled(string provider) => provider switch
     {
-        "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude, "MiniMax" => preferences.MiniMax, _ => false
+        "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude,
+        "MiniMax" => preferences.MiniMax, "DeepSeek" => preferences.DeepSeek, _ => false
     };
     public Task RefreshAfterAccountChange()
     {
@@ -427,7 +452,8 @@ internal sealed class MeterWindow : Form
         var next = provider switch
         {
             "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
-            "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled }, _ => preferences
+            "Claude" => preferences with { Claude = enabled }, "MiniMax" => preferences with { MiniMax = enabled },
+            "DeepSeek" => preferences with { DeepSeek = enabled }, _ => preferences
         };
         try { next.Save(AccountPreferences.DefaultDirectory); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -457,6 +483,7 @@ internal sealed class MeterWindow : Form
         if (!preferences.Kimi) others["Kimi Code"] = Disabled();
         if (!preferences.Claude) others["Claude Code"] = Disabled();
         if (!preferences.MiniMax) others["MiniMax Code"] = Disabled();
+        if (!preferences.DeepSeek) others["DeepSeek API"] = Disabled();
         if (!forecastEnabled) snapshot["forecast"] = Disabled();
     }
 
@@ -469,6 +496,7 @@ internal sealed class MeterWindow : Form
             if (demo)
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
+                sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
                 sample["quota_cards"] = JsonNode.Parse("""{"status":"available","distinct":1,"cards":[{"id":"q5_50","name":"热身完毕","series":"five_hour","rarity":"common","description":"5 小时窗口用量达到 50% 即掉落","count":2},{"id":"q5_80","name":"八分饱","series":"five_hour","rarity":"rare","description":"5 小时窗口用量达到 80% 即掉落","count":0}]}""");
@@ -493,6 +521,17 @@ internal sealed class MeterWindow : Form
                 accountInput = null;
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 var forecastTask = forecastEnabled ? RunCollector("--forecast-only", accountCancellation.Token) : null;
+                Task<string>? deepseekTask = null;
+                if (preferences.DeepSeek)
+                {
+                    string? key = null;
+                    try { key = DeepSeekKeyStore.Read(); }
+                    catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidDataException or IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+                    string? secretInput = DeepSeekKeyStore.Input(key);
+                    key = null;
+                    deepseekTask = RunCollector("--deepseek-only", accountCancellation.Token, secretInput);
+                    secretInput = null;
+                }
                 JsonObject combined;
                 try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
@@ -505,6 +544,8 @@ internal sealed class MeterWindow : Form
                     if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
                     combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 }
+                if (combined["other_accounts"] is not JsonObject) combined["other_accounts"] = new JsonObject();
+                combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = preferences.DeepSeek ? "loading" : "disabled" };
                 ApplyAccountPreferences(combined);
                 string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
@@ -515,6 +556,14 @@ internal sealed class MeterWindow : Form
                 combined["local_medals"] = new JsonObject { ["status"] = "loading" };
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) { Render(first.RootElement); NotifyLowQuota(first.RootElement); }
                 status.Text = "账户读取完成 · 正在扫描本机会话记录…";
+                if (deepseekTask is not null)
+                {
+                    try { combined["other_accounts"]!["DeepSeek API"] = JsonNode.Parse(await deepseekTask); }
+                    catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
+                    { combined["other_accounts"]!["DeepSeek API"] = new JsonObject { ["status"] = "error" }; }
+                    ApplyAccountPreferences(combined);
+                    using var accountSnapshot = JsonDocument.Parse(combined.ToJsonString()); Render(accountSnapshot.RootElement);
+                }
                 try
                 {
                     var local = JsonNode.Parse(await historyTask)!.AsObject();
@@ -696,6 +745,7 @@ internal sealed class MeterWindow : Form
                 AddMiniMaxAccount(accountRow, GetString(accountRow, "label", "账户"));
         }
         else AddMiniMaxAccount(minimaxAccount, "");
+        AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
         }
         else if (view == View.Applications) AddApplications(GetValue(root, "activity"));
         else if (view == View.Usage)
@@ -933,6 +983,34 @@ internal sealed class MeterWindow : Form
             AddCard(prefix, "暂时无法获取额度", Reason(account), null);
         else if (GetString(account, "status", "") is "available" or "partial")
             AddCard(prefix, "额度未提供", "账户服务未返回可展示的额度窗口", null);
+    }
+    void AddDeepSeekBalance(JsonElement account)
+    {
+        string status = GetString(account, "status", "disabled");
+        if (status == "disabled") return;
+        if (status == "loading") { AddCard("DEEPSEEK API", "正在读取余额", "只查询账户余额，不调用模型", null); return; }
+        var rows = GetValue(GetValue(account, "credits"), "value");
+        if (status is "available" or "partial" && rows.ValueKind == JsonValueKind.Array && rows.GetArrayLength() > 0)
+        {
+            int shown = 0;
+            foreach (var row in rows.EnumerateArray())
+            {
+                string unit = GetString(row, "unit", ""), total = GetString(row, "total", "");
+                string granted = GetString(row, "granted", ""), topped = GetString(row, "topped_up", "");
+                if (unit is not ("CNY" or "USD") || total.Length is < 1 or > 40 || granted.Length > 40 || topped.Length > 40) continue;
+                string details = granted.Length > 0 && topped.Length > 0 ? $"赠金 {granted} · 充值 {topped}" : "账户服务提供的余额";
+                AddCard("DEEPSEEK API · 余额", total + " " + unit, details, null);
+                shown++;
+            }
+            if (shown > 0) return;
+        }
+        string note = GetString(account, "reason", "") switch
+        {
+            "deepseek_credential_not_connected" => "请在托盘菜单设置 API 密钥",
+            "deepseek_credential_invalid" => "密钥格式无效，请重新设置",
+            _ => "请检查网络、密钥和账户状态后刷新"
+        };
+        AddCard("DEEPSEEK API", "暂时无法获取余额", note, null);
     }
     void AddCalendarReport(JsonElement report)
     {

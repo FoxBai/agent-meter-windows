@@ -24,6 +24,23 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_deepseek_balance_requires_explicit_key_and_uses_official_endpoint(self):
+        payload = {'is_available': True, 'balance_infos': [{'currency': 'CNY', 'total_balance': '110.00',
+                   'granted_balance': '10.00', 'topped_up_balance': '100.00'}]}
+        with patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'ambient-secret'}), \
+             patch('agent_meter.deepseek.get_json', return_value=payload) as request:
+            with self.assertRaises(SourceError):
+                backend.deepseek_balance(None, 1800000000)
+            request.assert_not_called()
+            result = backend.deepseek_balance('synthetic-secret', 1800000000)
+            self.assertEqual(request.call_args.args[0], 'https://api.deepseek.com/user/balance')
+            self.assertEqual(request.call_args.args[1], 'synthetic-secret')
+            self.assertEqual(result['credits']['value'][0]['total'], '110.00')
+            self.assertNotIn('synthetic-secret', json.dumps(result))
+            self.assertNotIn('ambient-secret', json.dumps(result))
+            with self.assertRaises(SourceError):
+                backend.deepseek_balance('bad key', 1800000000)
+
     def test_quota_cards_drop_once_and_preserve_private_account_names(self):
         now = 1800000000
         def account(label, remaining, reset=1800003600):

@@ -32,6 +32,7 @@ from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, pooled_value
 from agent_meter.collection import CARDS, LEDGER_SCHEMA, load_ledger, medals, save_ledger, track_windows
+from agent_meter.deepseek import collect_deepseek
 
 
 def codex_binary():
@@ -77,6 +78,16 @@ def minimax_quota(home, now):
         raise SourceError("minimax_credential_not_connected")
     source = collect_minimax(home, now, timeout=12, app_key=key)
     return {"status": source["status"], "quota": source["metrics"]["quota"]}
+
+
+def deepseek_balance(key, now):
+    """仅查询用户明确提供的 API 密钥，不回退读取进程环境变量。"""
+    if key is None:
+        raise SourceError("deepseek_credential_not_connected")
+    if not isinstance(key, str) or not 0 < len(key) <= 1280 or any(not '!' <= c <= '~' for c in key):
+        raise SourceError("deepseek_credential_invalid")
+    source = collect_deepseek(now, timeout=12, key=key)
+    return {"status": source["status"], "credits": source["metrics"]["credits"]}
 
 
 def validate_account_input(data):
@@ -676,6 +687,7 @@ def main():
     parser.add_argument("--history-worker", action="store_true")
     parser.add_argument("--forecast-only", action="store_true", help="查询第三方公开重置预测")
     parser.add_argument("--cards-update", action="store_true", help="使用标准输入中的额度更新本地卡册")
+    parser.add_argument("--deepseek-only", action="store_true", help="使用标准输入中的密钥查询 DeepSeek 余额")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -684,6 +696,22 @@ def main():
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.deepseek_only:
+        if args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
+            raise SystemExit(2)
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+            raw = sys.stdin.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("credential input too large")
+            data = json.loads(raw.lstrip("\ufeff"))
+            if not isinstance(data, dict) or set(data) != {"key"}:
+                raise ValueError("invalid credential input")
+            key = data["key"]
+        except (ValueError, TypeError, RecursionError):
+            raise SystemExit(2) from None
+        print(json.dumps(guarded(lambda: deepseek_balance(key, time.time())), ensure_ascii=False))
+        return
     if args.cards_update:
         if args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
             raise SystemExit(2)
