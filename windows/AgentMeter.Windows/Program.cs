@@ -796,7 +796,7 @@ internal sealed class MeterWindow : Form
         {
             var rows = medals.EnumerateArray().Where(row => GetString(row, "category", "") == category).ToArray();
             if (rows.Length == 0) continue;
-            AddHeading(title, "按已读取的本机记录计算");
+            AddHeading(title, category == "streak" ? "当前连续天数与历史达成分别计算" : "按已读取的本机记录计算");
             foreach (var row in rows)
             {
                 string name = GetString(row, "name", "徽章");
