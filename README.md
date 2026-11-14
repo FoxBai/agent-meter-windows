@@ -63,7 +63,7 @@
 - **WorkBuddy 账户积分（实验功能）**：由用户主动在应用内登录，使用独立的 WebView2 资料目录查询积分；默认关闭。该功能参考上游项目的网页接口实现，接口并非公开稳定的官方契约；真实账号和登录流程尚待验证。需要单独安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 - **账户卡片内的本机用量**：当账户额度及对应账本可读取时，在 Codex、Kimi、Claude、WorkBuddy 额度卡片中展示本机 Token 汇总；有有效逐日记录时展示近 30 个北京时间自然日的趋势。本机记录未按登录账户区分，不能当作当前账户的用量；MiniMax 多账户不会重复归入同一份本机账本。
 - **应用概览**：按工具汇总已读取的账户额度、本机 Token 和近 24 小时活动记录，支持按最近更新筛选并展开数据覆盖状态；近期记录更新不代表应用正在运行。
-- **应用活动单独刷新（主分支开发中）**：仅在应用页可见时，按至少 60 秒的间隔单独读取本机活动；与完整刷新互斥，不查询账户。隐藏面板或切换页面会取消当前活动读取。Alpha 11 安装包尚不包含此改进。
+- **应用活动单独刷新**：仅在应用页可见时，按至少 60 秒的间隔单独读取本机活动；与完整刷新互斥，不查询账户。隐藏面板或切换页面会取消当前活动读取；定时器交互和资源占用仍需实机验收。
 - **本机用量**：读取支持的会话账本，展示今日、近 7 天、近 30 天和累计 Token。Qoder CN 本机积分消耗单独展示，不计入 Token。账户额度和本机历史分别展示，统计范围不同。
 - **应用活动**：汇总近 24 小时各客户端活动记录，并标出采集时最近 15 分钟有更新的记录数；这只是记录更新时间，不代表进程仍在运行或任务已完成。不同客户端的覆盖范围可能不同。
 - **模型排行**：按近 7 天的本机记录汇总模型用量；当读取出错、模型明细不完整或数量超过采集上限时，界面会标注统计不完整。不同账本可能包含重叠记录，汇总值并非账户总用量。
@@ -106,7 +106,7 @@
 
 ### 下载预览版
 
-前往 [Windows v0.1.0-alpha.11 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.11)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
+前往 [Windows v0.1.0-alpha.12 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.12)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
 
 ### 从源码构建
 
