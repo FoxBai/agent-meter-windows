@@ -324,6 +324,34 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(report['sources'], 1)
         self.assertTrue(report['incomplete'])
 
+    def test_recent_activity_summarizes_without_project_paths_or_session_ids(self):
+        now = 1800000000
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {
+                'CODEX_HOME': '', 'CLAUDE_CONFIG_DIR': '', 'DSH_HOME': '', 'KIMI_CODE_HOME': '',
+                'XDG_DATA_HOME': '', 'OPENCODE_DB': ''}):
+            folder = Path(root) / '.codex'
+            folder.mkdir(parents=True)
+            db = sqlite3.connect(folder / 'state_5.sqlite')
+            try:
+                db.execute('CREATE TABLE threads (id TEXT, cwd TEXT, created_at INTEGER, updated_at INTEGER, model TEXT)')
+                db.execute('INSERT INTO threads VALUES (?,?,?,?,?)', ('synthetic-private-session', 'C:/synthetic-private-project', now - 3600, now - 30, 'synthetic-model'))
+                db.commit()
+            finally:
+                db.close()
+            raw = backend.collect_activity(backend.activity_config(Path(root)), now=now)
+            activity = backend.compact_activity(raw, now)
+        codex = next(item for item in activity['apps'] if item['name'] == 'Codex')
+        self.assertEqual((codex['sessions'], codex['recent_updates'], codex['last_updated']), (1, 1, now - 30))
+        self.assertNotIn('synthetic-private-session', json.dumps(activity))
+        self.assertNotIn('synthetic-private-project', json.dumps(activity))
+        self.assertNotIn('synthetic-model', json.dumps(activity))
+
+    def test_recent_activity_marks_unsupported_or_failed_sources_incomplete(self):
+        result = backend.compact_activity({'activities': [], 'sources_meta': {
+            'one': {'status': 'not_connected', 'reason': 'unsupported_schema'},
+            'two': {'status': 'not_connected', 'reason': 'sessions_not_found'}}}, 1800000000)
+        self.assertEqual(result['status'], 'partial')
+
     def test_estimated_cost_uses_known_groups_and_marks_unknown_models(self):
         priced = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                   'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}

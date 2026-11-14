@@ -96,7 +96,7 @@ internal sealed class MeterContext : ApplicationContext
 
 internal sealed class MeterWindow : Form
 {
-    enum View { Accounts, Usage, Report }
+    enum View { Accounts, Applications, Usage, Report }
     VisualTheme theme;
     Color Background => theme.Background;
     Color Card => theme.Card;
@@ -108,7 +108,7 @@ internal sealed class MeterWindow : Form
     readonly Button refresh = new();
     readonly Panel header = new();
     readonly Label title = new(), subtitle = new();
-    readonly Button accountTab = new(), usageTab = new(), reportTab = new();
+    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new();
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
@@ -139,21 +139,23 @@ internal sealed class MeterWindow : Form
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
         header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); };
-        foreach (var tab in new[] { accountTab, usageTab, reportTab })
+        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
-            tab.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold); tab.Size = new Size(110, 36);
+            tab.Font = new Font(Font.FontFamily, 9F, FontStyle.Bold); tab.Size = new Size(86, 36);
         }
         gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 135);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
         header.Controls.Add(gauges);
         accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 228);
-        usageTab.Text = "本机消耗"; usageTab.Location = new Point(136, 228);
-        reportTab.Text = "用量报告"; reportTab.Location = new Point(250, 228);
-        accountTab.Click += (_, _) => SetView(View.Accounts); usageTab.Click += (_, _) => SetView(View.Usage);
+        applicationsTab.Text = "应用"; applicationsTab.Location = new Point(112, 228);
+        usageTab.Text = "本机消耗"; usageTab.Location = new Point(202, 228);
+        reportTab.Text = "用量报告"; reportTab.Location = new Point(292, 228);
+        accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
+        usageTab.Click += (_, _) => SetView(View.Usage);
         reportTab.Click += (_, _) => SetView(View.Report);
-        header.Controls.AddRange([accountTab, usageTab, reportTab]); UpdateTabs();
+        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab]); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
@@ -177,7 +179,7 @@ internal sealed class MeterWindow : Form
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
     void UpdateTabs()
     {
-        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (usageTab, View.Usage), (reportTab, View.Report) })
+        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report) })
         {
             button.BackColor = view == tab ? theme.Selected : Card;
             button.ForeColor = view == tab ? Color.White : Primary;
@@ -318,6 +320,7 @@ internal sealed class MeterWindow : Form
                     combined["local_credits"] = local["local_credits"]?.DeepClone();
                     combined["daily_trend"] = local["daily_trend"]?.DeepClone();
                     combined["calendar_report"] = local["calendar_report"]?.DeepClone();
+                    combined["activity"] = local["activity"]?.DeepClone();
                     combined["price_status"] = local["price_status"]?.DeepClone();
                 }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
@@ -475,6 +478,7 @@ internal sealed class MeterWindow : Form
         }
         else AddMiniMaxAccount(minimaxAccount, "");
         }
+        else if (view == View.Applications) AddApplications(GetValue(root, "activity"));
         else if (view == View.Usage)
         {
         AddHeading("本机 Token", "只统计本设备可读取的会话记录");
@@ -542,6 +546,29 @@ internal sealed class MeterWindow : Form
         }
         else AddCalendarReport(GetValue(root, "calendar_report"));
         content.ResumeLayout(); ResizeCards();
+    }
+    void AddApplications(JsonElement activity)
+    {
+        AddHeading("应用活动", "近 24 小时的本机记录 · 不代表进程状态");
+        var apps = GetValue(activity, "apps");
+        if (apps.ValueKind != JsonValueKind.Array || apps.GetArrayLength() == 0)
+        {
+            string note = GetString(activity, "status", "") switch { "error" => "活动记录读取失败，请稍后刷新",
+                "partial" => "部分来源读取不完整，暂无可展示记录", _ => "未发现可展示的活动记录，或来源暂不支持" };
+            AddCard("近期活动", "暂无数据", note, null);
+            return;
+        }
+        if (GetString(activity, "status", "") == "partial")
+            AddCard("读取范围", "部分来源不完整", "不同客户端的活动记录覆盖范围不同", null);
+        foreach (var app in apps.EnumerateArray())
+        {
+            string name = GetString(app, "name", "应用");
+            var sessions = GetNumber(app, "sessions"); var recent = GetNumber(app, "recent_updates");
+            var last = GetNumber(app, "last_updated");
+            if (!sessions.HasValue || !recent.HasValue || !last.HasValue || last.Value < 0 || last.Value > 253402300799) continue;
+            string when = DateTimeOffset.FromUnixTimeSeconds((long)last.Value).LocalDateTime.ToString("MM-dd HH:mm");
+            AddCard(name, $"{sessions:0} 条活动记录", $"采集时 15 分钟内更新：{recent:0} 条", null, "最后更新 " + when + "（本机时间）");
+        }
     }
     void AddMiniMaxAccount(JsonElement account, string accountLabel)
     {
@@ -804,7 +831,7 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}},"Claude Code":{"status":"available","quota":{"value":[{"bucket":"five_hour","window_minutes":300,"remaining_percent":82,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"seven_day","window_minutes":10080,"remaining_percent":53,"resets_at":{"epoch_seconds":1794913200}}]}},"MiniMax Code":{"status":"available","quota":{"value":[{"bucket":"5h","remaining_percent":55,"resets_at":{"epoch_seconds":1794654000}}]}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000},"groups":[{"model":"gpt-5.3-codex","total_tokens":6200000},{"model":"gpt-5.1-codex","total_tokens":1400000}]},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}},"estimate":{"amount_usd":"2.464","partial":false}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000},"groups":[{"model":"claude-sonnet-4","total_tokens":900000}]},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}},"daily_trend":{"days":[{"date":"2026-11-08","tokens":340000},{"date":"2026-11-09","tokens":780000},{"date":"2026-11-10","tokens":1120000},{"date":"2026-11-11","tokens":550000},{"date":"2026-11-12","tokens":970000},{"date":"2026-11-13","tokens":1300000},{"date":"2026-11-14","tokens":1767000}],"sources":2,"incomplete":false},"calendar_report":{"periods":{"week":{"previous_start":"2026-11-02","current_start":"2026-11-09","current_end":"2026-11-14","previous_tokens":4200000,"current_tokens":6367000},"month":{"previous_start":"2026-10-01","current_start":"2026-11-01","current_end":"2026-11-14","previous_tokens":14200000,"current_tokens":8200000}},"sources":2,"incomplete":false,"timezone":"Asia/Shanghai"},"activity":{"status":"available","window_hours":24,"idle_minutes":15,"apps":[{"name":"Codex","sessions":5,"recent_updates":2,"last_updated":1794650400},{"name":"Claude Code","sessions":2,"recent_updates":0,"last_updated":1794643200}]}}
     """;
 }
 internal sealed class RoundedCard : Panel

@@ -465,6 +465,7 @@ class CollectActivityTests(unittest.TestCase):
                 db.execute("CREATE TABLE threads(id,cwd,created_at,updated_at,recency_at,title,tokens_used)")
                 db.execute("INSERT INTO threads VALUES('t','/project',?,?,?,'private',900000)",
                            (NOW-3000, NOW, NOW-2000))
+            db.close()  # SQLite 上下文只负责事务；Windows 上必须显式关闭文件句柄。
             feed = collect_activity(config, now=NOW)
             row = feed["activities"][0]
             self.assertEqual((row["application_id"], row["status"]), ("codex", "suspected_ended"))

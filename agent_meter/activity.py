@@ -867,7 +867,7 @@ def collect_activity(config, now=None, table=None):
     run("zcode", lambda: zcode_activities(config["zcode_usage_db"], window_start, idle_seconds, now))
     run("codex", lambda: codex_activities(config["codex_state_db"], window_start, idle_seconds, now))
     run("codex_images", lambda: codex_image_activities(config["codex_history_db"], window_start, idle_seconds, now))
-    run("kimi", lambda: _kimi_session_activities(Path(config["home"]) / ".kimi-code/sessions",
+    run("kimi", lambda: _kimi_session_activities(config.get("kimi_code_sessions_dir") or Path(config["home"]) / ".kimi-code/sessions",
                                                  "kimi", window_start, idle_seconds, now))
     run("kimi_desktop", lambda: _kimi_session_activities(config["kimi_desktop_sessions_dir"],
                                                          "kimi_desktop", window_start, idle_seconds, now))

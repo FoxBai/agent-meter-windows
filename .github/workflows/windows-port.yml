@@ -52,6 +52,21 @@ jobs:
           $inputJson = '{"minimax_accounts":[{"label":"synthetic","region":"cn","key":null}]}'
           $multiple = $inputJson | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account --account-input | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $multiple.other_accounts.'MiniMax Code'[0].reason -ne 'minimax_vault_credential_missing') { throw 'Saved account input check failed' }
+          $fixture = @'
+          import sqlite3, sys, time
+          from pathlib import Path
+          root = Path(sys.argv[1]) / 'agentmeter-activity' / '.codex'
+          root.mkdir(parents=True, exist_ok=True)
+          connection = sqlite3.connect(root / 'state_5.sqlite')
+          connection.execute('CREATE TABLE threads(id TEXT, cwd TEXT, created_at INTEGER, updated_at INTEGER, model TEXT)')
+          connection.execute('INSERT INTO threads VALUES(?,?,?,?,?)', ('synthetic-id', 'C:/synthetic-path', int(time.time())-60, int(time.time())-30, 'synthetic-model'))
+          connection.commit()
+          connection.close()
+          '@
+          $fixture | ./.venv-win/Scripts/python.exe - $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'Activity fixture failed' }
+          $activity = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or @($activity.activity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity aggregation failed' }
       - name: Smoke test application startup
         shell: pwsh
         run: |

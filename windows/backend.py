@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from agent_meter.cli_sessions import claude_tokens_metric, codex_tokens_metric, collect_gemini_sessions, mcode_tokens_metric
+from agent_meter.activity import collect_activity
 from agent_meter.claude_code import collect_claude
 from agent_meter.codex import normalize_limits
 from agent_meter.model import DISPLAY_ZONE, SourceError, metric
@@ -154,6 +155,57 @@ def histories(home, now):
         "MiMo Code": lambda: collect_mimocode_tokens(data_root / "mimocode" / "mimocode.db", now)["metrics"]["tokens"],
         "DevECo": lambda: collect_deveco_tokens(data_root / "deveco" / "deveco-stable.db", now)["metrics"]["tokens"],
     }
+
+
+def activity_config(home):
+    """为 Windows 本机活动读取器设置路径；未适配的桌面端路径保持缺省。"""
+    codex = Path(os.environ.get("CODEX_HOME") or home / ".codex")
+    claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
+    kimi = Path(os.environ.get("KIMI_CODE_HOME") or home / ".kimi-code")
+    xdg = os.environ.get("XDG_DATA_HOME")
+    data = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".local" / "share"
+    override = os.environ.get("OPENCODE_DB")
+    opencode = (data / "opencode" / "opencode.db" if not override or override == ":memory:" else
+                Path(override) if Path(override).is_absolute() else data / "opencode" / override)
+    if override == ":memory:":
+        opencode = home / ".agent-meter-no-opencode-db"
+    return {"home": str(home), "codex_state_db": str(codex / "state_5.sqlite"),
+            "codex_history_db": str(codex / "thread_history_1.sqlite"),
+            "zcode_usage_db": str(home / ".zcode" / "cli" / "db" / "db.sqlite"),
+            "kimi_code_sessions_dir": str(kimi / "sessions"),
+            "kimi_desktop_sessions_dir": str(home / ".agent-meter-unavailable" / "kimi-desktop"),
+            "kimi_legacy_sessions_dir": str(home / ".kimi" / "sessions"),
+            "dsh_sessions_dir": str(Path(os.environ.get("DSH_HOME") or home / ".dsh") / "sessions"),
+            "zstd_binary": shutil.which("zstd"), "claude_projects_dir": str(claude / "projects"),
+            "claude_desktop_sessions_dir": None, "gemini_dir": str(home / ".gemini"),
+            "opencode_db": str(opencode), "mimocode_db": str(data / "mimocode" / "mimocode.db"),
+            "deveco_db": str(data / "deveco" / "deveco-stable.db"),
+            "activity_window_hours": 24, "activity_idle_minutes": 15}
+
+
+def compact_activity(payload, now):
+    """只输出各应用的计数和更新时间，不传递会话标识、项目路径或内容。"""
+    names = {"codex": "Codex", "codex_images": "Codex 生图", "zcode": "ZCode", "kimi": "Kimi Code",
+             "kimi_desktop": "Kimi 桌面端", "kimi_legacy": "Kimi CLI（旧版）", "deepseek_harness": "DeepSeek Harness",
+             "claude": "Claude Code", "gemini": "Gemini CLI", "opencode": "OpenCode", "mimo_code": "MiMo Code", "deveco": "DevECo"}
+    groups = {}
+    for row in payload.get("activities", []):
+        if not isinstance(row, dict) or row.get("app") not in names:
+            continue
+        stamp = row.get("last_event_at")
+        stamp = stamp.get("epoch_seconds") if isinstance(stamp, dict) else None
+        if isinstance(stamp, bool) or not isinstance(stamp, (int, float)) or not math.isfinite(stamp) or not 0 <= stamp <= now:
+            continue
+        item = groups.setdefault(row["app"], {"name": names[row["app"]], "sessions": 0, "recent_updates": 0, "last_updated": 0})
+        item["sessions"] += 1
+        item["recent_updates"] += int(now - stamp <= 15 * 60)
+        item["last_updated"] = max(item["last_updated"], int(stamp))
+    meta = payload.get("sources_meta")
+    incomplete = not isinstance(meta, dict) or any(isinstance(item, dict) and
+        (item.get("status") == "error" or (item.get("status") == "not_connected" and item.get("reason") and
+         not str(item.get("reason")).endswith("_not_found") and item.get("reason") != "disabled_by_user")) for item in meta.values())
+    return {"status": "partial" if incomplete else "available", "window_hours": 24, "idle_minutes": 15,
+            "apps": sorted(groups.values(), key=lambda item: (-item["recent_updates"], -item["last_updated"], item["name"]))}
 
 
 def guarded(fn):
@@ -408,6 +460,11 @@ def history_worker(home=None, prices_dir=None):
             if request != {"command": "refresh"}:
                 raise ValueError("invalid request")
             result = compact_history(collect(local_only=True, home=home), load_price_table(prices_dir))
+            try:
+                root = Path(home) if home else Path.home()
+                result["activity"] = compact_activity(collect_activity(activity_config(root), now=result["observed_at"]), result["observed_at"])
+            except Exception:
+                result["activity"] = {"status": "error", "apps": []}
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")), flush=True)
         except (ValueError, TypeError, KeyError):
             print('{"error":"invalid_request"}', flush=True)
