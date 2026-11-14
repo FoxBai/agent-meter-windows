@@ -31,6 +31,7 @@
 - [Alpha 10 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.10) 对应提交 `5be3690`；账户卡片的本机汇总、30 日曲线和滚动演示已检查，安装包通过隔离账本和隐私字段检查。
 - [Alpha 11 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.11) 对应提交 `1067f97`；应用概览的筛选和展开在隔离构建机通过基础检查，深浅色和窄窗口演示已检查，实体设备仍需验收。
 - 当前公开 [Alpha 12 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.12) 对应提交 `68d9010`；活动刷新条件、打包后的隔离数据读取和隐私字段过滤已检查，界面定时交互和资源占用仍需实机验收。
+- 主分支提交 `9b8b412` 后，在隔离 Windows 构建机用虚构数据验证了活动刷新触发、间隔、切换页面取消、隐藏时停止及重新打开后恢复；实体设备上的定时器和资源占用仍需验收。
 
 ## 安全与数据边界
 
