@@ -16,12 +16,14 @@
 
 ![Agent Meter 面板，图中为虚构演示数据](windows/assets/screenshot.png)
 
-截图展示 Alpha 7 至 Alpha 9，在隔离的 Windows 构建环境中使用虚构演示数据生成；窗口边框可能因系统版本而异。实际可显示的字段取决于工具、账户、本机记录和版本。
+截图展示 Alpha 7 至 Alpha 10，在隔离的 Windows 构建环境中使用虚构演示数据生成；窗口边框可能因系统版本而异。实际可显示的字段取决于工具、账户、本机记录和版本。
 
 <details>
 <summary>查看本机消耗、报告、预测、收集与余额页面</summary>
 
 ![本机消耗页面，图中为虚构演示数据](windows/assets/usage-preview.png)
+
+![账户卡片中独立展示本机用量趋势，图中为虚构演示数据](windows/assets/account-local-preview.png)
 
 ![用量报告页面，图中为虚构演示数据](windows/assets/report-preview.png)
 
@@ -57,7 +59,7 @@
 - **MiniMax Code 账户额度**：支持在托盘菜单添加、更新和删除最多 5 个账户；密钥保存在 Windows 凭据管理器，各账户分开查询。查询默认关闭，须主动开启。账户列表文件不存在时也可使用已有的 `MINIMAX_TOKEN_PLAN_KEY` 与 `MINIMAX_REGION` 环境变量，修改环境变量后需重启程序。仅经模拟测试，真实账户和窗口尚待实机验证。
 - **DeepSeek API 余额（开发中）**：通过托盘菜单由用户自行添加或删除 API 密钥，保存后启用余额查询；密钥保存在 Windows 凭据管理器，不读取浏览器登录。返回的充值余额和赠金分别显示，不代表订阅额度或本机 Token 消耗。依据 [DeepSeek 官方余额接口](https://api-docs.deepseek.com/zh-cn/api/get-user-balance/)；目前仅经模拟测试，真实账户和窗口交互尚待验收。
 - **WorkBuddy 账户积分（实验功能）**：由用户主动在应用内登录，使用独立的 WebView2 资料目录查询积分；默认关闭。该功能参考上游项目的网页接口实现，接口并非公开稳定的官方契约；真实账号和登录流程尚待验证。需要单独安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
-- **账户卡片内的本机用量（主分支开发中）**：当对应账本可读取时，在 Codex、Kimi、Claude、WorkBuddy 额度卡片中展示本机 Token 汇总及近 30 个北京时间自然日的趋势。本机记录未按登录账户区分，不能当作该账户的用量；Alpha 9 安装包尚不包含此改进。
+- **账户卡片内的本机用量**：当账户额度及对应账本可读取时，在 Codex、Kimi、Claude、WorkBuddy 额度卡片中展示本机 Token 汇总；有有效逐日记录时展示近 30 个北京时间自然日的趋势。本机记录未按登录账户区分，不能当作当前账户的用量；MiniMax 多账户不会重复归入同一份本机账本。
 - **本机用量**：读取支持的会话账本，展示今日、近 7 天、近 30 天和累计 Token。Qoder CN 本机积分消耗单独展示，不计入 Token。账户额度和本机历史分别展示，统计范围不同。
 - **应用活动**：汇总近 24 小时各客户端活动记录，并标出采集时最近 15 分钟有更新的记录数；这只是记录更新时间，不代表进程仍在运行或任务已完成。不同客户端的覆盖范围可能不同。
 - **模型排行**：按近 7 天的本机记录汇总模型用量；当读取出错、模型明细不完整或数量超过采集上限时，界面会标注统计不完整。不同账本可能包含重叠记录，汇总值并非账户总用量。
@@ -100,7 +102,7 @@
 
 ### 下载预览版
 
-前往 [Windows v0.1.0-alpha.9 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.9)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
+前往 [Windows v0.1.0-alpha.10 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.10)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含程序运行环境；WorkBuddy 登录另需 Microsoft Edge WebView2 Runtime。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
 
 ### 从源码构建
 
