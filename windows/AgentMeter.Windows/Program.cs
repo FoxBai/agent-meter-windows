@@ -31,6 +31,17 @@ internal sealed class MeterContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel());
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
+        if (!demo)
+        {
+            var accounts = new ToolStripMenuItem("账户查询");
+            foreach (var provider in new[] { "Codex", "Kimi", "Claude" })
+            {
+                var item = new ToolStripMenuItem(provider + " 账户额度") { Checked = window.AccountEnabled(provider) };
+                item.Click += (_, _) => { if (window.SetAccountEnabled(provider, !item.Checked)) item.Checked = !item.Checked; };
+                accounts.DropDownItems.Add(item);
+            }
+            menu.Items.Add(accounts);
+        }
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
@@ -60,13 +71,16 @@ internal sealed class MeterWindow : Form
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
     readonly bool demo;
-    bool busy;
+    AccountPreferences preferences;
+    CancellationTokenSource? accountCancellation;
+    bool busy, refreshQueued;
     bool showAccounts = true;
     string? lastSnapshot;
 
     public MeterWindow(bool demo, bool windowed)
     {
-        this.demo = demo; Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
+        this.demo = demo; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
+        Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
         var header = new Panel { Dock = DockStyle.Top, Height = 270 };
@@ -108,9 +122,48 @@ internal sealed class MeterWindow : Form
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
     }
 
+    public bool AccountEnabled(string provider) => provider switch
+    {
+        "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude, _ => false
+    };
+    public bool SetAccountEnabled(string provider, bool enabled)
+    {
+        var next = provider switch
+        {
+            "Codex" => preferences with { Codex = enabled }, "Kimi" => preferences with { Kimi = enabled },
+            "Claude" => preferences with { Claude = enabled }, _ => preferences
+        };
+        try { next.Save(AccountPreferences.DefaultDirectory); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            status.Text = "无法保存账户开关，请检查设置目录权限";
+            return false;
+        }
+        preferences = next;
+        accountCancellation?.Cancel();
+        if (lastSnapshot is not null)
+        {
+            var snapshot = JsonNode.Parse(lastSnapshot)!.AsObject(); ApplyAccountPreferences(snapshot);
+            using var doc = JsonDocument.Parse(snapshot.ToJsonString()); Render(doc.RootElement);
+        }
+        if (busy) { refreshQueued = true; status.Text = "账户设置已保存，当前刷新结束后生效"; }
+        else _ = RefreshData();
+        return true;
+    }
+
+    void ApplyAccountPreferences(JsonObject snapshot)
+    {
+        static JsonObject Disabled() => new() { ["status"] = "disabled", ["reason"] = "disabled_by_user" };
+        if (!preferences.Codex) snapshot["account"] = Disabled();
+        var others = snapshot["other_accounts"] as JsonObject;
+        if (others is null) { others = new JsonObject(); snapshot["other_accounts"] = others; }
+        if (!preferences.Kimi) others["Kimi Code"] = Disabled();
+        if (!preferences.Claude) others["Claude Code"] = Disabled();
+    }
+
     public async Task RefreshData()
     {
-        if (busy) return;
+        if (busy) { refreshQueued = true; return; }
         busy = true; refresh.Enabled = false; status.Text = "正在刷新，本机记录较多时可能需要一些时间…";
         try
         {
@@ -118,7 +171,10 @@ internal sealed class MeterWindow : Form
             else
             {
                 bool partialFailure = false;
-                var accountTask = RunCollector("--account-only", shutdown.Token);
+                accountCancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+                string arguments = "--account-only" + (preferences.Codex ? "" : " --disable-codex-account") +
+                    (preferences.Kimi ? "" : " --disable-kimi-account") + (preferences.Claude ? "" : " --disable-claude-account");
+                var accountTask = RunCollector(arguments, accountCancellation.Token);
                 var historyTask = historyWorker.RefreshAsync(shutdown.Token);
                 JsonObject combined;
                 try { combined = JsonNode.Parse(await accountTask)!.AsObject(); }
@@ -127,6 +183,7 @@ internal sealed class MeterWindow : Form
                     partialFailure = true;
                     combined = new JsonObject { ["account"] = new JsonObject { ["status"] = "error", ["reason"] = "account_read_failed" } };
                 }
+                ApplyAccountPreferences(combined);
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
                 using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
                 status.Text = "账户读取完成 · 正在扫描本机会话记录…";
@@ -142,6 +199,7 @@ internal sealed class MeterWindow : Form
                     partialFailure = true;
                     combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "error", ["reason"] = "history_scan_failed" } };
                 }
+                ApplyAccountPreferences(combined);
                 using var final = JsonDocument.Parse(combined.ToJsonString()); Render(final.RootElement);
                 status.Text = partialFailure ? "部分数据读取失败 · 请稍后刷新" : $"更新于 {DateTime.Now:HH:mm:ss}  ·  本机历史 ≠ 账户总用量";
             }
@@ -152,7 +210,15 @@ internal sealed class MeterWindow : Form
             content.Controls.Clear(); AddHeading("暂时无法读取数据", "请确认应用文件完整后重试。");
             status.Text = "刷新失败 · " + (ex is OperationCanceledException ? "读取超时" : "无法启动或解析采集程序");
         }
-        finally { busy = false; if (!IsDisposed && !Disposing) refresh.Enabled = true; }
+        finally
+        {
+            accountCancellation?.Dispose(); accountCancellation = null; busy = false;
+            if (!IsDisposed && !Disposing)
+            {
+                refresh.Enabled = true;
+                if (refreshQueued) { refreshQueued = false; _ = RefreshData(); }
+            }
+        }
     }
     static async Task<string> RunCollector(string mode, CancellationToken shutdown)
     {
@@ -192,6 +258,7 @@ internal sealed class MeterWindow : Form
                 AddCard(bucket.ToUpperInvariant() + "  ·  " + period, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", detail, remaining);
             }
         }
+        else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
         var credits = GetValue(GetValue(account, "credits"), "value");
         if (credits.ValueKind == JsonValueKind.Array)
@@ -235,6 +302,7 @@ internal sealed class MeterWindow : Form
                     AddCard("KIMI CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
                 }
             }
+            else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
             else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
             var wallet = GetValue(GetValue(kimiAccount, "credits"), "value");
             string amount = GetString(wallet, "amount", ""), currency = GetString(wallet, "unit", "");
@@ -254,6 +322,7 @@ internal sealed class MeterWindow : Form
                 AddCard("CLAUDE CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
             }
         }
+        else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
             AddCard("CLAUDE CODE", "暂时无法获取额度", Reason(claudeAccount), null);
         }

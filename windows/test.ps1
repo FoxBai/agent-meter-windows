@@ -12,3 +12,5 @@ $testCases = @(
 )
 & $python -m unittest @testCases -q
 if ($LASTEXITCODE -ne 0) { throw 'Windows collector tests failed.' }
+& dotnet run --project windows\AccountPreferences.Tests -c Release
+if ($LASTEXITCODE -ne 0) { throw 'Account preferences test failed.' }

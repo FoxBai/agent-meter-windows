@@ -245,6 +245,30 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(result['account']['status'], 'available')
         self.assertEqual(result['history'], {})
 
+    def test_disabled_accounts_never_read_credentials_or_contact_services(self):
+        with tempfile.TemporaryDirectory() as root, \
+             patch.object(backend, 'codex_binary') as codex, \
+             patch.object(backend, 'kimi_quota') as kimi, \
+             patch.object(backend, 'claude_quota') as claude:
+            result = backend.collect(account_only=True, home=root,
+                                     disabled_accounts=frozenset({'codex', 'kimi', 'claude'}))
+            self.assertEqual(result['account']['reason'], 'disabled_by_user')
+            self.assertEqual(result['other_accounts']['Kimi Code']['status'], 'disabled')
+            self.assertEqual(result['other_accounts']['Claude Code']['status'], 'disabled')
+            codex.assert_not_called()
+            kimi.assert_not_called()
+            claude.assert_not_called()
+
+    def test_account_disable_flags_apply_to_backend_process(self):
+        with tempfile.TemporaryDirectory() as root:
+            result = subprocess.run([sys.executable, '-m', 'windows.backend', '--account-only', '--home', root,
+                                     '--disable-codex-account', '--disable-kimi-account', '--disable-claude-account'],
+                                    check=True, capture_output=True, text=True, encoding='utf-8', timeout=15)
+        output = json.loads(result.stdout)
+        self.assertEqual(output['account']['status'], 'disabled')
+        self.assertEqual(output['other_accounts']['Kimi Code']['status'], 'disabled')
+        self.assertEqual(output['other_accounts']['Claude Code']['status'], 'disabled')
+
     def test_missing_histories_are_not_zero(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CODEX_HOME': '', 'CLAUDE_CONFIG_DIR': '', 'DSH_HOME': '', 'KIMI_CODE_HOME': '', 'XDG_DATA_HOME': '', 'OPENCODE_DB': ''}):
             result = backend.collect(local_only=True, home=root)

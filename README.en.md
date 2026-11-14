@@ -21,6 +21,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 ## What it does
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
+- **Account switches** — enable or disable Codex, Kimi and Claude account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
@@ -30,7 +31,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 
 ## Data sources
 
-The table describes the current `main` branch. The published alpha.1 package predates Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking and trend chart.
+The table describes the current `main` branch. The published alpha.1 package predates the account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking and trend chart.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
@@ -91,7 +92,7 @@ These are targeted tests, not a claim that every upstream macOS feature is cover
 
 ## Privacy and data
 
-The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh, modify or save that token. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
+The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Account lookups are enabled by default and can be disabled individually through the tray menu; switch states are saved without credentials in `%LOCALAPPDATA%\AgentMeter\preferences.json`. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh, modify or save that token. Disabling a source attempts to stop an ongoing account lookup; a request already sent cannot be recalled. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
 
 This Windows port is independent of the optional reward-claiming features in the upstream macOS application; those controls are not exposed by the Windows interface. Check the code and the provider's own policies if your environment has restrictions on local session access.
 
