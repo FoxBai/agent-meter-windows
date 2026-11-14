@@ -30,6 +30,7 @@ from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_
 from agent_meter.minimax import collect_minimax, normalize_minimax
 from agent_meter.qoder_tokens import collect_qoder_credits
 from agent_meter.reset_forecast import collect_reset_forecast, pooled_value
+from agent_meter.collection import medals
 
 
 def codex_binary():
@@ -358,6 +359,58 @@ def calendar_report(result):
     return {"periods": out, "sources": sources, "incomplete": incomplete, "timezone": "Asia/Shanghai"} if sources else None
 
 
+def local_medals(result):
+    """按上游规则计算可由本机逐日账本支持的徽章，不推断缺失来源。"""
+    today = datetime.fromtimestamp(result["observed_at"], DISPLAY_ZONE).date()
+    sources, incomplete = [], False
+    for name, item in result.get("history", {}).items():
+        status, reason = item.get("status"), item.get("reason") or ""
+        if status in {"error", "partial"} or (status == "unavailable" and reason and not reason.endswith("_not_found")):
+            incomplete = True
+        if status not in {"available", "partial", "stale"}:
+            continue
+        value = item.get("value")
+        if not isinstance(value, dict):
+            continue
+        totals = value.get("periods", {}).get("all", {}).get("totals", {})
+        if totals.get("requests") == 0:
+            continue
+        rows = value.get("daily_buckets")
+        if not isinstance(rows, list):
+            incomplete = True
+            continue
+        valid = []
+        for row in rows:
+            if not isinstance(row, dict):
+                incomplete = True
+                continue
+            try:
+                day = date.fromisoformat(row.get("date", ""))
+            except (TypeError, ValueError):
+                incomplete = True
+                continue
+            count = row.get("tokens")
+            if day > today or isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 2**63 - 1:
+                incomplete = True
+                continue
+            valid.append({"date": day.isoformat(), "tokens": count})
+        expected = totals.get("total_tokens")
+        if isinstance(expected, int) and not isinstance(expected, bool) and expected >= 0 and sum(row["tokens"] for row in valid) != expected:
+            incomplete = True
+        if not any(row["tokens"] > 0 for row in valid):
+            continue
+        sources.append({"id": name, "metrics": {"tokens": {"status": "available", "value": {"daily_buckets": valid}}}})
+    if not sources:
+        return None
+    all_medals, stats = medals(sources, None, result["observed_at"])
+    available = {"day_peak", "lifetime", "streak", "apps", "record"}
+    rows = [{key: medal[key] for key in ("id", "name", "category", "category_name", "target", "unit", "tier", "value", "progress", "earned", "earned_on")}
+            for medal in all_medals if medal["category"] in available]
+    return {"medals": rows, "sources": len(sources), "incomplete": incomplete,
+            "earned": sum(item["earned"] for item in rows), "total": len(rows),
+            "active_days": stats["active_days"], "timezone": "Asia/Shanghai"}
+
+
 _DEFAULT_PRICE_TABLE = object()
 
 
@@ -463,6 +516,7 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
             pass
     compact["daily_trend"] = recent_daily_trend(result)
     compact["calendar_report"] = calendar_report(result)
+    compact["local_medals"] = local_medals(result)
     compact["local_credits"] = {}
     for name, item in result.get("local_credits", {}).items():
         value = item.get("value")

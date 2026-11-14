@@ -59,7 +59,8 @@ jobs:
           $multiple = $inputJson | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --account-only --home "$env:RUNNER_TEMP/agentmeter-empty" --disable-codex-account --disable-kimi-account --disable-claude-account --enable-minimax-account --account-input | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $multiple.other_accounts.'MiniMax Code'[0].reason -ne 'minimax_vault_credential_missing') { throw 'Saved account input check failed' }
           $fixture = @'
-          import sqlite3, sys, time
+          import json, sqlite3, sys, time
+          from datetime import datetime, timezone
           from pathlib import Path
           root = Path(sys.argv[1]) / 'agentmeter-activity' / '.codex'
           root.mkdir(parents=True, exist_ok=True)
@@ -68,11 +69,17 @@ jobs:
           connection.execute('INSERT INTO threads VALUES(?,?,?,?,?)', ('synthetic-id', 'C:/synthetic-path', int(time.time())-60, int(time.time())-30, 'synthetic-model'))
           connection.commit()
           connection.close()
+          sessions = root / 'sessions'
+          sessions.mkdir()
+          events = [ {'type':'turn_context','payload':{'model':'synthetic-model'}},
+                     {'timestamp':datetime.now(timezone.utc).isoformat(),'type':'event_msg','payload':{'type':'token_count','info':{'total_token_usage':{'input_tokens':100000000,'cached_input_tokens':0,'output_tokens':0,'reasoning_output_tokens':0}}}} ]
+          (sessions / 'synthetic.jsonl').write_text('\n'.join(json.dumps(event) for event in events) + '\n', encoding='utf-8')
           '@
           $fixture | ./.venv-win/Scripts/python.exe - $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { throw 'Activity fixture failed' }
           $activity = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or @($activity.activity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity aggregation failed' }
+          if (@($activity.local_medals.medals | Where-Object { $_.id -eq 'day_1' -and $_.earned }).Count -ne 1) { throw 'Medal projection failed' }
           $forecastFixture = @'
           import json, sys, time
           from pathlib import Path
@@ -106,7 +113,7 @@ jobs:
         shell: pwsh
         run: |
           $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
-          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 35) { throw 'Demo preview generation failed' }
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 44) { throw 'Demo preview generation failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AgentMeter-demo-previews

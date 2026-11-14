@@ -184,7 +184,7 @@ internal sealed class MeterContext : ApplicationContext
 
 internal sealed class MeterWindow : Form
 {
-    enum View { Accounts, Applications, Usage, Report, Forecast }
+    enum View { Accounts, Applications, Usage, Report, Forecast, Collection }
     VisualTheme theme;
     Color Background => theme.Background;
     Color Card => theme.Card;
@@ -196,7 +196,7 @@ internal sealed class MeterWindow : Form
     readonly Button refresh = new();
     readonly Panel header = new();
     readonly Label title = new(), subtitle = new();
-    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new();
+    readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
@@ -231,7 +231,7 @@ internal sealed class MeterWindow : Form
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
         header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); LayoutTabs(); };
-        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab })
+        foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = new Font(Font.FontFamily, 9F, FontStyle.Bold); tab.Size = new Size(86, 36);
@@ -241,12 +241,13 @@ internal sealed class MeterWindow : Form
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
         header.Controls.Add(gauges);
         accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
-        usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测";
+        usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; collectionTab.Text = "收集";
         accountTab.Click += (_, _) => SetView(View.Accounts); applicationsTab.Click += (_, _) => SetView(View.Applications);
         usageTab.Click += (_, _) => SetView(View.Usage);
         reportTab.Click += (_, _) => SetView(View.Report);
         forecastTab.Click += (_, _) => SetView(View.Forecast);
-        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab]); LayoutTabs(); UpdateTabs();
+        collectionTab.Click += (_, _) => SetView(View.Collection);
+        header.Controls.AddRange([accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab]); LayoutTabs(); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
@@ -274,25 +275,34 @@ internal sealed class MeterWindow : Form
         Location = new Point(-32000, -32000);
         Show();
         RefreshData().GetAwaiter().GetResult();
+        void SavePreview(string name)
+        {
+            Application.DoEvents();
+            using var image = new Bitmap(Width, Height);
+            DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
+            image.Save(Path.Combine(directory, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+        }
         foreach (var option in VisualThemes.All)
         {
             SetTheme(option);
             foreach (var (tab, name) in new[] { (View.Accounts, "accounts"), (View.Applications, "applications"),
-                                               (View.Usage, "usage"), (View.Report, "report"), (View.Forecast, "forecast") })
+                                               (View.Usage, "usage"), (View.Report, "report"), (View.Forecast, "forecast"),
+                                               (View.Collection, "collection") })
             {
                 SetView(tab);
-                Application.DoEvents();
-                using var image = new Bitmap(Width, Height);
-                DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
-                image.Save(Path.Combine(directory, option.Id + "-" + name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                SavePreview(option.Id + "-" + name);
             }
         }
+        Size = new Size(420, 760);
+        SetTheme(VisualThemes.Find("aurora"));
+        SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
+        SetView(View.Collection); SavePreview("aurora-collection-narrow");
         Hide();
     }
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
     void UpdateTabs()
     {
-        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast) })
+        foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (collectionTab, View.Collection) })
         {
             button.BackColor = view == tab ? theme.Selected : Card;
             button.ForeColor = view == tab ? Color.White : Primary;
@@ -300,12 +310,19 @@ internal sealed class MeterWindow : Form
     }
     void LayoutTabs()
     {
-        var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab };
+        var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab };
         int width = Math.Max(1, (header.ClientSize.Width - 44 - 4 * (tabs.Length - 1)) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
             tabs[index].Size = new Size(width, 36);
             tabs[index].Location = new Point(22 + index * (width + 4), 228);
+            float textSize = width < 70 ? 8F : 9F;
+            if (Math.Abs(tabs[index].Font.Size - textSize) > 0.01F)
+            {
+                var old = tabs[index].Font;
+                tabs[index].Font = new Font(Font.FontFamily, textSize, FontStyle.Bold);
+                old.Dispose();
+            }
         }
     }
     public string ThemeId => theme.Id;
@@ -424,6 +441,7 @@ internal sealed class MeterWindow : Form
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
+                sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
             }
             else
@@ -469,6 +487,7 @@ internal sealed class MeterWindow : Form
                     combined["local_credits"] = local["local_credits"]?.DeepClone();
                     combined["daily_trend"] = local["daily_trend"]?.DeepClone();
                     combined["calendar_report"] = local["calendar_report"]?.DeepClone();
+                    combined["local_medals"] = local["local_medals"]?.DeepClone();
                     combined["activity"] = local["activity"]?.DeepClone();
                     combined["price_status"] = local["price_status"]?.DeepClone();
                 }
@@ -704,7 +723,8 @@ internal sealed class MeterWindow : Form
         }
         }
         else if (view == View.Report) AddCalendarReport(GetValue(root, "calendar_report"));
-        else AddForecast(GetValue(root, "forecast"));
+        else if (view == View.Forecast) AddForecast(GetValue(root, "forecast"));
+        else AddCollection(GetValue(root, "local_medals"));
         content.ResumeLayout(); ResizeCards();
     }
     void AddForecast(JsonElement forecast)
@@ -754,6 +774,44 @@ internal sealed class MeterWindow : Form
         }
         AddCard("统计说明", "仅供参考", "第三方预测并非官方承诺，也不是个人额度周期", null);
     }
+    void AddCollection(JsonElement collection)
+    {
+        AddHeading("收集册", "基于本机逐日账本 · 不同记录可能重叠");
+        var medals = GetValue(collection, "medals");
+        if (medals.ValueKind != JsonValueKind.Array)
+        {
+            AddCard("本机徽章", "暂无可用记录", "需要可读取的本机逐日用量账本", null);
+            return;
+        }
+        var earned = GetNumber(collection, "earned"); var total = GetNumber(collection, "total");
+        var sources = GetNumber(collection, "sources");
+        AddCard("本机徽章", earned.HasValue && total.HasValue ? $"{earned:0} / {total:0} 已获得" : "正在计算",
+                sources.HasValue ? $"基于 {sources:0} 个可读取账本" : "基于可读取账本", null);
+        if (GetValue(collection, "incomplete").ValueKind == JsonValueKind.True)
+            AddCard("读取范围", "部分记录不完整", "徽章只反映已读取的数据", null);
+        foreach (var (category, title) in new[] { ("day_peak", "单日巅峰"), ("lifetime", "累计里程"),
+            ("streak", "连续出勤"), ("apps", "多端并用"), ("record", "个人纪录") })
+        {
+            var rows = medals.EnumerateArray().Where(row => GetString(row, "category", "") == category).ToArray();
+            if (rows.Length == 0) continue;
+            AddHeading(title, "按已读取的本机记录计算");
+            foreach (var row in rows)
+            {
+                string name = GetString(row, "name", "徽章");
+                double? value = GetNumber(row, "value"), target = GetNumber(row, "target"), progress = GetNumber(row, "progress");
+                if (!value.HasValue || !target.HasValue || !progress.HasValue || !double.IsFinite(value.Value) ||
+                    !double.IsFinite(target.Value) || !double.IsFinite(progress.Value) || value < 0 || target <= 0) continue;
+                string unit = GetString(row, "unit", "") switch { "tokens" => "tokens", "days" => "天", "apps" => "个应用", "times" => "次", _ => "" };
+                bool hasMedal = GetValue(row, "earned").ValueKind == JsonValueKind.True;
+                string date = GetString(row, "earned_on", "");
+                string detail = $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}" +
+                    (hasMedal && date.Length == 10 ? " · 达成于 " + date : "");
+                AddCard(name, hasMedal ? "已获得" : "待解锁", detail, Math.Clamp(progress.Value * 100, 0, 100));
+            }
+        }
+        AddCard("尚在移植", "更多卡片与徽章", "签到、图片、估算花费等暂未计算", null);
+    }
+
     void AddApplications(JsonElement activity)
     {
         AddHeading("应用活动", "近 24 小时的本机记录 · 不代表进程状态");

@@ -13,7 +13,8 @@ $testCases = @(
     'tests.test_activity.CodexImageTests', 'tests.test_activity.KimiTests', 'tests.test_activity.CollectActivityTests',
     'tests.test_reset_forecast.NormalizeTests', 'tests.test_reset_forecast.CombineTests',
     'tests.test_reset_forecast.CountdownTests', 'tests.test_reset_forecast.HistoryTests',
-    'tests.test_reset_forecast.CollectTests', 'tests.test_reset_forecast.TransportTests'
+    'tests.test_reset_forecast.CollectTests', 'tests.test_reset_forecast.TransportTests',
+    'tests.test_collection.DerivedTests.test_medals_from_history'
 )
 & $python -m unittest @testCases -q
 if ($LASTEXITCODE -ne 0) { throw 'Windows collector tests failed.' }

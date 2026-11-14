@@ -24,6 +24,29 @@ from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_local_medals_use_supported_daily_records_and_mark_gaps(self):
+        now = datetime(2026, 11, 14, 12, tzinfo=timezone.utc).timestamp()
+        metric = {'status': 'available', 'value': {'periods': {'all': {'totals': {'requests': 2, 'total_tokens': 100000002}}},
+                  'daily_buckets': [{'date': '2026-11-13', 'tokens': 100000000},
+                                    {'date': '2026-11-14', 'tokens': 2},
+                                    {'date': '2099-01-01', 'tokens': 999999999},
+                                    {'date': 'invalid', 'tokens': 999999999}]}}
+        result = backend.local_medals({'observed_at': now, 'history': {'Codex': metric,
+            'failed': {'status': 'error', 'reason': 'synthetic', 'value': metric['value']}}})
+        self.assertTrue(result['incomplete'])
+        self.assertEqual(result['sources'], 1)
+        self.assertEqual(result['active_days'], 2)
+        badges = {row['id']: row for row in result['medals']}
+        self.assertTrue(badges['day_1']['earned'])
+        self.assertEqual(badges['day_1']['value'], 100000000)
+        self.assertFalse(badges['life_10']['earned'])
+        self.assertEqual({row['category'] for row in result['medals']}, {'day_peak', 'lifetime', 'streak', 'apps', 'record'})
+        self.assertNotIn('daily_buckets', json.dumps(result))
+        self.assertIsNone(backend.local_medals({'observed_at': now, 'history': {}}))
+        empty = {'status': 'available', 'value': {'periods': {'all': {'totals': {'requests': 1, 'total_tokens': 0}}},
+                 'daily_buckets': [{'date': '2026-11-14', 'tokens': 0}]}}
+        self.assertIsNone(backend.local_medals({'observed_at': now, 'history': {'Codex': empty}}))
+
     def test_forecast_projection_keeps_basis_and_never_invents_missing_values(self):
         source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
             'cache_state': 'stale', 'sources': [
