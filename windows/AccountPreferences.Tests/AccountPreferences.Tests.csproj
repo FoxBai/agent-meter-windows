@@ -9,5 +9,6 @@
     <Compile Include="..\AgentMeter.Windows\AccountPreferences.cs" Link="AccountPreferences.cs" />
     <Compile Include="..\AgentMeter.Windows\PanelPlacement.cs" Link="PanelPlacement.cs" />
     <Compile Include="..\AgentMeter.Windows\VisualThemes.cs" Link="VisualThemes.cs" />
+    <Compile Include="..\AgentMeter.Windows\PriceOverrides.cs" Link="PriceOverrides.cs" />
   </ItemGroup>
 </Project>

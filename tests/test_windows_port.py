@@ -256,6 +256,36 @@ class WindowsBackendTests(unittest.TestCase):
             'totals': {'total_tokens': 1000000}, 'groups': [deepseek]}
         self.assertTrue(backend.compact_history(source)['history']['Codex']['estimate']['partial'])
 
+    def test_custom_price_overrides_and_corrupt_file_suppresses_estimates(self):
+        group = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
+                 'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}
+        source = {'version': 1, 'observed_at': 1, 'account': {}, 'history': {'Codex': {
+            'status': 'available', 'value': {'periods': {'today': {
+                'totals': {'total_tokens': 1000000}, 'groups': [group]}}}}}}
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'prices.json'
+            path.write_text(json.dumps({'currency': 'USD', 'models': {'gpt-5.3-codex': {
+                'input': 3, 'cache_read': 0.1, 'cache_write': 0, 'output': 9}}}), encoding='utf-8')
+            item = backend.compact_history(source, backend.load_price_table(root))['history']['Codex']
+            self.assertEqual(Decimal(item['estimate']['amount_usd']), Decimal('3'))
+            path.write_text('{broken', encoding='utf-8')
+            result = backend.compact_history(source, backend.load_price_table(root))
+            self.assertEqual(result['price_status'], 'invalid')
+            self.assertNotIn('estimate', result['history']['Codex'])
+            path.write_text('{"currency":"USD","models":{},"future":true}', encoding='utf-8')
+            self.assertIsNone(backend.load_price_table(root))
+            path.write_text('{"currency":"USD","currency":"USD","models":{}}', encoding='utf-8')
+            self.assertIsNone(backend.load_price_table(root))
+
+    def test_history_worker_uses_the_explicit_price_directory(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as prices:
+            (Path(prices) / 'prices.json').write_text('broken', encoding='utf-8')
+            env = dict(os.environ, CODEX_HOME='', CLAUDE_CONFIG_DIR='', DSH_HOME='', KIMI_CODE_HOME='', XDG_DATA_HOME='', OPENCODE_DB='')
+            result = subprocess.run([sys.executable, '-m', 'windows.backend', '--history-worker', '--home', home,
+                                     '--prices-dir', prices], input='{"command":"refresh"}\n', env=env,
+                                    check=True, capture_output=True, text=True, encoding='utf-8', timeout=15)
+            self.assertEqual(json.loads(result.stdout)['price_status'], 'invalid')
+
     def test_account_only_does_not_start_history_scan(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \
              patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \

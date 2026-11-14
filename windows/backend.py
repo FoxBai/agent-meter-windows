@@ -1,6 +1,7 @@
 """Windows 适配层：复用上游只读采集器，仅输出指标，不输出会话内容或凭据。"""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -19,7 +20,7 @@ from agent_meter.workbuddy_tokens import collect_workbuddy_tokens
 from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
 from agent_meter.record_cache import records_cache
-from agent_meter.prices import PriceTable, estimate_source_cost
+from agent_meter.prices import PriceTable, estimate_source_cost, normalize_model
 from agent_meter.kimi_tokens import collect_kimi_tokens
 from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
@@ -177,12 +178,58 @@ def recent_daily_trend(result):
             "sources": sources, "incomplete": incomplete} if sources else None
 
 
-def compact_history(result):
+_DEFAULT_PRICE_TABLE = object()
+
+
+def load_price_table(directory):
+    """读取可选的美元自定义价格；损坏时不显示估算，绝不回退成看似有效的值。"""
+    if directory is None:
+        return PriceTable("USD", {}, set())
+    path = Path(directory) / "prices.json"
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate price field")
+            result[key] = value
+        return result
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        rows = data.get("models") if isinstance(data, dict) and set(data) == {"currency", "models"} and data.get("currency") == "USD" else None
+        if not isinstance(rows, dict) or len(rows) > 200:
+            return None
+        models, seen = {}, set()
+        for pattern, values in rows.items():
+            if (not isinstance(pattern, str) or not 0 < len(pattern.strip()) <= 120 or not isinstance(values, dict)
+                    or set(values) != {"input", "cache_read", "cache_write", "output"}):
+                return None
+            normalized = normalize_model(pattern)
+            if not normalized or normalized in seen:
+                return None
+            seen.add(normalized)
+            rates = []
+            for key in ("input", "cache_read", "cache_write", "output"):
+                rate = values.get(key)
+                if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1_000_000:
+                    return None
+                rates.append(rate)
+            models[pattern] = tuple(rates)
+        return PriceTable("USD", models, set())
+    except FileNotFoundError:
+        return PriceTable("USD", {}, set())
+    except (OSError, ValueError, TypeError, OverflowError):
+        return None
+
+
+def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
     """仅向面板传递显示字段；模型明细按用量排序并限制数量。"""
     compact = {"version": result["version"], "observed_at": result["observed_at"],
                "account": result["account"], "history": {}}
     # 使用上游内置美元价格和固定回退汇率，不联网更新价格或把估算当作账单。
-    table = PriceTable("USD", {}, set())
+    table = PriceTable("USD", {}, set()) if price_table is _DEFAULT_PRICE_TABLE else price_table
+    compact["price_status"] = "available" if table is not None else "invalid"
     for name, item in result["history"].items():
         value = item.get("value")
         periods = value.get("periods", {}) if isinstance(value, dict) else {}
@@ -216,7 +263,7 @@ def compact_history(result):
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
                                     "value": {"periods": selected} if selected else None}
         try:
-            estimated = estimate_source_cost(item, table)
+            estimated = estimate_source_cost(item, table) if table is not None else None
             cost = (estimated or {}).get("value", {}).get("periods", {}).get("today", {})
             today = periods.get("today", {})
             today_total = today.get("totals", {}).get("total_tokens") if isinstance(today, dict) else None
@@ -254,7 +301,7 @@ def compact_history(result):
     return compact
 
 
-def history_worker(home=None):
+def history_worker(home=None, prices_dir=None):
     """在刷新之间保留内存缓存；源文件变化时失效，不落盘会话或凭据。"""
     records_cache.max_bytes = 128 * 1024 * 1024
     records_cache.max_entries = 50000
@@ -266,7 +313,7 @@ def history_worker(home=None):
             request = json.loads(line.lstrip("\ufeff"))
             if request != {"command": "refresh"}:
                 raise ValueError("invalid request")
-            result = compact_history(collect(local_only=True, home=home))
+            result = compact_history(collect(local_only=True, home=home), load_price_table(prices_dir))
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")), flush=True)
         except (ValueError, TypeError, KeyError):
             print('{"error":"invalid_request"}', flush=True)
@@ -280,6 +327,7 @@ def main():
     parser.add_argument("--local-only", action="store_true")
     parser.add_argument("--account-only", action="store_true")
     parser.add_argument("--history-worker", action="store_true")
+    parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
@@ -287,7 +335,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     if args.history_worker:
         sys.stdin.reconfigure(encoding="utf-8")
-        history_worker(args.home)
+        history_worker(args.home, args.prices_dir)
         return
     disabled = frozenset(provider for provider in ("codex", "kimi", "claude")
                          if getattr(args, "disable_" + provider + "_account"))

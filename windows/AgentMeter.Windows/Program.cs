@@ -41,6 +41,12 @@ internal sealed class MeterContext : ApplicationContext
                 accounts.DropDownItems.Add(item);
             }
             menu.Items.Add(accounts);
+            menu.Items.Add("自定义模型价格", null, async (_, _) =>
+            {
+                ShowPanel(true);
+                using var editor = new PriceEditor(AccountPreferences.DefaultDirectory);
+                if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshData();
+            });
         }
         var appearance = new ToolStripMenuItem("界面风格");
         foreach (var themeOption in VisualThemes.All)
@@ -243,6 +249,7 @@ internal sealed class MeterWindow : Form
                     combined["history"] = local["history"]?.DeepClone();
                     combined["local_credits"] = local["local_credits"]?.DeepClone();
                     combined["daily_trend"] = local["daily_trend"]?.DeepClone();
+                    combined["price_status"] = local["price_status"]?.DeepClone();
                 }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
                 {
@@ -384,7 +391,8 @@ internal sealed class MeterWindow : Form
         {
             AddUsageSummary(history);
             AddDailyTrend(GetValue(root, "daily_trend"));
-            AddHeading("本机账本", "金额基于内置价格快照，不代表账单");
+            AddHeading("本机账本", GetString(root, "price_status", "") == "invalid"
+                ? "自定义价格无法读取，已隐藏金额" : "按价格快照及自定义价格估算，不代表账单");
             int visible = 0;
             foreach (var item in history.EnumerateObject())
             {
@@ -752,12 +760,15 @@ internal sealed class HistoryWorker : IDisposable
                 Stop();
                 var path = Path.Combine(AppContext.BaseDirectory, "backend", "AgentMeterBackend.exe");
                 if (!File.Exists(path)) throw new IOException("backend_missing");
-                process = new Process { StartInfo = new ProcessStartInfo(path, "--history-worker")
+                process = new Process { StartInfo = new ProcessStartInfo(path)
                 {
                     UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
                     RedirectStandardOutput = true, RedirectStandardError = true,
                     StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8
                 } };
+                process.StartInfo.ArgumentList.Add("--history-worker");
+                process.StartInfo.ArgumentList.Add("--prices-dir");
+                process.StartInfo.ArgumentList.Add(AccountPreferences.DefaultDirectory);
                 if (!process.Start()) throw new InvalidOperationException("backend_start_failed");
                 _ = process.StandardError.ReadToEndAsync();
             }

@@ -45,6 +45,24 @@ try
         if (Contrast(theme.Accent, theme.Background) < 4.5 || Contrast(theme.Accent, theme.Card) < 4.5)
             throw new InvalidOperationException($"{theme.Name} 的强调文字对比度不足");
     }
+    var prices = new[] { new PriceRow("sample-model", 1.25m, 0.2m, 0m, 3m) };
+    PriceOverrides.Save(directory, prices);
+    if (PriceOverrides.Load(directory).Single() != prices[0]) throw new InvalidOperationException("价格保存或读取失败");
+    string oldPrices = File.ReadAllText(Path.Combine(directory, "prices.json"));
+    try
+    {
+        PriceOverrides.Save(directory, new[] { prices[0], prices[0] with { Model = "SAMPLE.MODEL" } });
+        throw new InvalidOperationException("不应接受重复的模型名称");
+    }
+    catch (InvalidDataException) { }
+    if (File.ReadAllText(Path.Combine(directory, "prices.json")) != oldPrices)
+        throw new InvalidOperationException("无效价格不能覆盖已有设置");
+    File.WriteAllText(Path.Combine(directory, "prices.json"), "broken");
+    try { PriceOverrides.Load(directory); throw new InvalidOperationException("损坏价格文件不应被当作空设置"); }
+    catch (InvalidDataException) { }
+    File.WriteAllText(Path.Combine(directory, "prices.json"), "{\"currency\":\"USD\",\"models\":{},\"future\":true}");
+    try { PriceOverrides.Load(directory); throw new InvalidOperationException("未知字段不能被静默覆盖"); }
+    catch (InvalidDataException) { }
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
@@ -64,7 +82,7 @@ try
         throw new InvalidOperationException("面板应适应较小工作区");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 1920, 1040)) != new Size(500, 760))
         throw new InvalidOperationException("足够大的工作区不应改变面板尺寸");
-    Console.WriteLine("账户开关、面板位置和主题对比度检查通过");
+    Console.WriteLine("账户开关、面板位置、主题对比度和价格设置检查通过");
 }
 finally
 {
