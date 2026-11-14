@@ -47,6 +47,9 @@ internal sealed class MeterContext : ApplicationContext
                 using var editor = new PriceEditor(AccountPreferences.DefaultDirectory);
                 if (editor.ShowDialog(window) == DialogResult.OK) await window.RefreshData();
             });
+            var alerts = new ToolStripMenuItem("低额度提醒（低于 20%）") { Checked = window.AlertsEnabled };
+            alerts.Click += (_, _) => { if (window.SetAlertsEnabled(!alerts.Checked)) alerts.Checked = !alerts.Checked; };
+            menu.Items.Add(alerts);
         }
         var appearance = new ToolStripMenuItem("界面风格");
         foreach (var themeOption in VisualThemes.All)
@@ -63,6 +66,13 @@ internal sealed class MeterContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
+        window.QuotaLow += messages =>
+        {
+            string summary = string.Join("\n", messages.Take(3)) + (messages.Count > 3 ? $"\n另有 {messages.Count - 3} 项，请打开面板查看。" : "");
+            if (summary.Length > 240) summary = summary[..239] + "…";
+            try { tray.ShowBalloonTip(8000, "Agent 额度提醒", summary, ToolTipIcon.Warning); }
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
+        };
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
@@ -95,10 +105,11 @@ internal sealed class MeterWindow : Form
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
+    readonly QuotaAlerts quotaAlerts = new();
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
-    bool busy, refreshQueued, positioning;
+    bool busy, refreshQueued, positioning, alertsEnabled;
     Size preferredSize;
     bool showAccounts = true;
     string? lastSnapshot;
@@ -106,6 +117,7 @@ internal sealed class MeterWindow : Form
     public MeterWindow(bool demo, bool windowed)
     {
         this.demo = demo; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
+        alertsEnabled = !demo && AlertPreferences.Load(AccountPreferences.DefaultDirectory);
         theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
@@ -182,6 +194,27 @@ internal sealed class MeterWindow : Form
     {
         "Codex" => preferences.Codex, "Kimi" => preferences.Kimi, "Claude" => preferences.Claude, _ => false
     };
+    public bool AlertsEnabled => alertsEnabled;
+    public event Action<IReadOnlyList<string>>? QuotaLow;
+    public bool SetAlertsEnabled(bool enabled)
+    {
+        try { AlertPreferences.Save(AccountPreferences.DefaultDirectory, enabled); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存提醒设置，请检查设置目录权限"; return false; }
+        alertsEnabled = enabled; quotaAlerts.Clear();
+        if (enabled && lastSnapshot is not null)
+        {
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            NotifyLowQuota(snapshot.RootElement);
+        }
+        return true;
+    }
+    void NotifyLowQuota(JsonElement snapshot)
+    {
+        if (!alertsEnabled) return;
+        var messages = quotaAlerts.Evaluate(snapshot);
+        if (messages.Count > 0) QuotaLow?.Invoke(messages);
+    }
     public bool SetAccountEnabled(string provider, bool enabled)
     {
         var next = provider switch
@@ -196,6 +229,7 @@ internal sealed class MeterWindow : Form
             return false;
         }
         preferences = next;
+        quotaAlerts.Clear();
         accountCancellation?.Cancel();
         if (lastSnapshot is not null)
         {
@@ -241,7 +275,7 @@ internal sealed class MeterWindow : Form
                 }
                 ApplyAccountPreferences(combined);
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };
-                using (var first = JsonDocument.Parse(combined.ToJsonString())) Render(first.RootElement);
+                using (var first = JsonDocument.Parse(combined.ToJsonString())) { Render(first.RootElement); NotifyLowQuota(first.RootElement); }
                 status.Text = "账户读取完成 · 正在扫描本机会话记录…";
                 try
                 {

@@ -22,6 +22,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
 - **Account switches** — enable or disable Codex, Kimi and Claude account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials.
+- **Low-quota alerts** — optionally enable Windows notifications below 20% remaining; repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
@@ -33,7 +34,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 
 ## Data sources
 
-The table describes the current `main` branch. The published alpha.1 package predates appearance options, account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking, trend chart and price estimates.
+The table describes the current `main` branch. The published alpha.1 package predates low-quota alerts, appearance options, account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking, trend chart and price estimates.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |

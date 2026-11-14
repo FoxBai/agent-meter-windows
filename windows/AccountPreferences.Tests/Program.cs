@@ -1,5 +1,6 @@
 using AgentMeter.Windows;
 using System.Drawing;
+using System.Text.Json;
 
 string parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AgentMeterPreferencesTests"));
 string directory = Path.GetFullPath(Path.Combine(parent, Guid.NewGuid().ToString("N")));
@@ -63,6 +64,23 @@ try
     File.WriteAllText(Path.Combine(directory, "prices.json"), "{\"currency\":\"USD\",\"models\":{},\"future\":true}");
     try { PriceOverrides.Load(directory); throw new InvalidOperationException("未知字段不能被静默覆盖"); }
     catch (InvalidDataException) { }
+    if (AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒首次应默认关闭");
+    AlertPreferences.Save(directory, true);
+    if (!AlertPreferences.Load(directory)) throw new InvalidOperationException("额度提醒设置未保存");
+    var alerts = new QuotaAlerts();
+    JsonElement Snapshot(double remaining, long reset, string status = "available") => JsonSerializer.SerializeToElement(new
+    {
+        account = new { status, quota = new { value = new[] { new { bucket = "primary", window_minutes = 300,
+            remaining_percent = remaining, resets_at = new { epoch_seconds = reset } } } } }
+    });
+    var now = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+    if (alerts.Evaluate(Snapshot(20, 100), now).Count != 0 || alerts.Evaluate(Snapshot(19, 100), now).Count != 1 ||
+        alerts.Evaluate(Snapshot(15, 100), now).Count != 0 || alerts.Evaluate(Snapshot(15, 101), now.AddMinutes(1)).Count != 0 ||
+        alerts.Evaluate(Snapshot(15, 101), now.AddMinutes(16)).Count != 1)
+        throw new InvalidOperationException("低额度提醒阈值、去重或重置周期错误");
+    if (alerts.Evaluate(Snapshot(35, 101), now.AddMinutes(17)).Count != 0 || alerts.Evaluate(Snapshot(10, 101), now.AddMinutes(17)).Count != 1 ||
+        alerts.Evaluate(Snapshot(10, 102, "disabled"), now.AddMinutes(17)).Count != 0)
+        throw new InvalidOperationException("额度恢复或关闭来源后的提醒错误");
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
@@ -82,7 +100,7 @@ try
         throw new InvalidOperationException("面板应适应较小工作区");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 1920, 1040)) != new Size(500, 760))
         throw new InvalidOperationException("足够大的工作区不应改变面板尺寸");
-    Console.WriteLine("账户开关、面板位置、主题对比度和价格设置检查通过");
+    Console.WriteLine("账户开关、面板位置、主题、价格设置和额度提醒检查通过");
 }
 finally
 {
