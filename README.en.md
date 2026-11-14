@@ -16,7 +16,7 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The Alpha 5 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
+The Alpha 6 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png), [collection](windows/assets/collection-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
 
 ## What it does
 
@@ -37,7 +37,7 @@ The Alpha 5 screenshot was generated with fictional demo data on an isolated Win
 - **Calendar reports** — shows local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. Export interaction still needs device testing.
 - **Reset forecasts (in development)** — an optional third-party forecast page shows each site's 24-hour and 48-hour estimates, labels model-based fallbacks and displays update times when available. Disabled by default. Synthetic tests passed; two of three sites returned usable data in one isolated network check, while the interface still needs device testing. Forecasts are not an OpenAI promise or an account's own reset clock.
 - **Collection (in development)** — derives daily, lifetime, streak, multi-app and personal-record medals from local daily ledgers using upstream rules. Ledgers can overlap and incomplete sources are flagged. Other medals and non-quota collectible cards are not ported; the page still needs device testing.
-- **Quota cards (main branch, in development)** — applies upstream five-hour and seven-day thresholds, recording each tier once per window. Quota state and card counts are stored locally; a missing trustworthy quota or reset time never becomes a drop. Not included in Alpha 5; the interface and real accounts still need device testing.
+- **Quota cards (in development)** — applies upstream five-hour and seven-day thresholds, recording each tier once per window. Quota state and card counts are stored locally; a missing trustworthy quota or reset time never becomes a drop. The interface and real accounts still need device testing.
 - **API-equivalent estimates** — shows today's USD estimate for models with matching prices. Missing prices, breakdowns or peak/off-peak information are flagged. The tray menu can edit local USD overrides to the upstream built-in snapshot. Built-in prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Live price and exchange-rate updates are not yet available.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
@@ -71,7 +71,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.5](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.5), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.6](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.6), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 
@@ -109,7 +109,7 @@ The Windows adapter reads local session files and usage databases; it derives us
 
 Third-party forecasts are off by default. Enabling them contacts `willreset.com`, `codex-reset.com` and `codexreset.org` over HTTPS without sending account credentials or local sessions. Public forecast data and history are cached in `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`; disabling the switch does not erase this cache or retract requests already sent.
 
-On the main branch, quota cards pass only the needed quota fields and multi-account labels to a local process over standard input, and store observed quota windows, peaks, reset times and card counts in `%LOCALAPPDATA%\AgentMeter\collection.json`, without keys or session content. Multi-account labels are distinguished by a hash; renaming an account starts a new tracking identity. Disabling account lookup stops new reads but does not delete existing local cards. An unreadable ledger is not overwritten as empty.
+Quota cards pass only the needed quota fields and multi-account labels to a local process over standard input, and store observed quota windows, peaks, reset times and card counts in `%LOCALAPPDATA%\AgentMeter\collection.json`, without keys or session content. Multi-account labels are distinguished by a hash; renaming an account starts a new tracking identity. Disabling account lookup stops new reads but does not delete existing local cards. An unreadable ledger is not overwritten as empty.
 
 User-added MiniMax keys are stored in Windows Credential Manager; `minimax-accounts.json` contains labels, regions and random IDs, not keys. When enabled, keys are passed to the local backend through standard input and sent over HTTPS to the selected MiniMax usage endpoint, never in command-line arguments or application logs. The environment-variable fallback applies only when the account-list file is absent; clearing the list in the interface retains an empty file and does not re-enable it. Disabling a source attempts to stop an ongoing account lookup; a request already sent cannot be recalled. The app does not initiate model prompts or credit redemption.
 
