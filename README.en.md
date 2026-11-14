@@ -16,24 +16,26 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The screenshot uses fictional demo data. Actual availability depends on the agent, account, local files and version.
+The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version.
 
 ## What it does
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
+- **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
+- **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
 ## Data sources
 
-The table describes the current `main` branch. The published alpha.1 package predates the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers and the 7/30-day views.
+The table describes the current `main` branch. The published alpha.1 package predates Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking and trend chart.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
 | Codex | Quota and reset time; credits and reset cards when available | Codex sessions and archives |
-| Claude Code | Not yet | Local project sessions |
+| Claude Code | Existing local subscription credential (synthetic validation) | Local project sessions |
 | Gemini CLI | Not yet | Local chat sessions |
 | WorkBuddy | Not yet | Local project sessions |
 | ZCode | Not yet | Local CLI usage database |
@@ -89,7 +91,7 @@ These are targeted tests, not a claim that every upstream macOS feature is cover
 
 ## Privacy and data
 
-The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
+The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh, modify or save that token. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
 
 This Windows port is independent of the optional reward-claiming features in the upstream macOS application; those controls are not exposed by the Windows interface. Check the code and the provider's own policies if your environment has restrictions on local session access.
 
