@@ -29,7 +29,7 @@ internal sealed class MeterContext : ApplicationContext
         icon = new Icon(iconStream);
         window = new MeterWindow(demo, windowed) { Icon = icon };
         var menu = new ContextMenuStrip();
-        menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel());
+        menu.Items.Add("打开 Agent Meter", null, (_, _) => ShowPanel(true));
         menu.Items.Add("刷新数据", null, async (_, _) => await window.RefreshData());
         if (!demo)
         {
@@ -45,13 +45,13 @@ internal sealed class MeterContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
-        tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(); } };
+        tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (window.Visible) window.Hide(); else ShowPanel(true); } };
         window.FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; window.Hide(); } };
         window.FormClosed += (_, _) => { if (!quitting) ExitThread(); };
         ShowPanel();
         _ = window.RefreshData();
     }
-    void ShowPanel() { window.PlaceAtTray(); window.Show(); window.Activate(); }
+    void ShowPanel(bool atCursor = false) { window.PlaceAtTray(atCursor); window.Show(); window.Activate(); }
     protected override void ExitThreadCore()
     {
         quitting = true; tray.Visible = false; tray.Dispose(); if (!window.IsDisposed) { window.Close(); window.Dispose(); } icon.Dispose();
@@ -73,7 +73,8 @@ internal sealed class MeterWindow : Form
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
-    bool busy, refreshQueued;
+    bool busy, refreshQueued, positioning;
+    Size preferredSize;
     bool showAccounts = true;
     string? lastSnapshot;
 
@@ -83,6 +84,8 @@ internal sealed class MeterWindow : Form
         Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
+        preferredSize = Size;
+        Resize += (_, _) => { if (!positioning && WindowState == FormWindowState.Normal) preferredSize = Size; };
         var header = new Panel { Dock = DockStyle.Top, Height = 270 };
         var title = new Label { Text = "◈  Agent 用量", Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.FromArgb(216, 207, 255) };
         var subtitle = new Label { Text = "账户额度与本机消耗", AutoSize = true, Location = new Point(25, 55), ForeColor = Muted };
@@ -109,10 +112,19 @@ internal sealed class MeterWindow : Form
         Controls.Add(content); Controls.Add(status); Controls.Add(header);
         timer.Interval = 15 * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
     }
-    public void PlaceAtTray()
+    public void PlaceAtTray(bool atCursor)
     {
-        var area = Screen.PrimaryScreen?.WorkingArea ?? Screen.GetWorkingArea(Point.Empty);
-        Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
+        Point cursor = Cursor.Position;
+        var screen = atCursor ? Screen.FromPoint(cursor) : Screen.PrimaryScreen ?? Screen.FromPoint(cursor);
+        positioning = true;
+        try
+        {
+            var fit = PanelPlacement.Fit(preferredSize, screen.WorkingArea);
+            MinimumSize = new Size(Math.Min(420, fit.Width), Math.Min(480, fit.Height));
+            Size = fit;
+            Location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Size, cursor, atCursor);
+        }
+        finally { positioning = false; }
     }
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
     void UpdateTabs() { accountTab.BackColor = showAccounts ? Color.FromArgb(115, 76, 219) : Card; usageTab.BackColor = showAccounts ? Card : Color.FromArgb(115, 76, 219); }

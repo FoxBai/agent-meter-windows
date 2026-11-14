@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\AgentMeter.Windows\AccountPreferences.cs" Link="AccountPreferences.cs" />
+    <Compile Include="..\AgentMeter.Windows\PanelPlacement.cs" Link="PanelPlacement.cs" />
   </ItemGroup>
 </Project>
