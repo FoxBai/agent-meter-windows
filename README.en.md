@@ -16,7 +16,7 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version.
+The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version. The [sample report image](windows/assets/report-share-preview.png) was generated from fictional data by the current source; it is not included in Alpha 2.
 
 ## What it does
 
@@ -29,7 +29,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
-- **Calendar reports** — the main branch adds local totals for the current and previous calendar week and month, indicating that the current period is incomplete. A Markdown export contains only aggregate figures. This page is not in Alpha 2; share images are still in development.
+- **Calendar reports** — the main branch adds local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. This page is not in Alpha 2, and the export interaction still needs device testing.
 - **API-equivalent estimates** — shows today's USD estimate for models with matching prices. Missing prices, breakdowns or peak/off-peak information are flagged. The tray menu can edit local USD overrides to the upstream built-in snapshot. Built-in prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Live price and exchange-rate updates are not yet available.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 

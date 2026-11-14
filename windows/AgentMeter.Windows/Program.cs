@@ -519,6 +519,11 @@ internal sealed class MeterWindow : Form
         export.FlatAppearance.BorderColor = theme.Border;
         export.Click += (_, _) => ExportCalendarReport();
         content.Controls.Add(export);
+        var imageExport = new Button { Text = "导出报告分享图", Height = 42, Margin = new Padding(0, 0, 0, 12),
+            BackColor = Card, ForeColor = Primary, FlatStyle = FlatStyle.Flat };
+        imageExport.FlatAppearance.BorderColor = theme.Border;
+        imageExport.Click += (_, _) => ExportShareImage();
+        content.Controls.Add(imageExport);
     }
     void ExportCalendarReport()
     {
@@ -536,6 +541,25 @@ internal sealed class MeterWindow : Form
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException or System.Security.SecurityException)
         {
             MessageBox.Show(this, ex is InvalidDataException ? ex.Message : "无法导出报告，请检查目标位置。",
+                "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+    void ExportShareImage()
+    {
+        try
+        {
+            if (lastSnapshot is null) throw new InvalidDataException("没有可导出的报告");
+            using var snapshot = JsonDocument.Parse(lastSnapshot);
+            using var image = ShareCardRenderer.Render(snapshot.RootElement, theme, demo);
+            using var dialog = new SaveFileDialog { Title = "导出报告分享图", Filter = "PNG 图片 (*.png)|*.png",
+                FileName = "AgentMeter-分享图-" + DateTime.Now.ToString("yyyy-MM-dd") + ".png", AddExtension = true, OverwritePrompt = true };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            image.Save(dialog.FileName, System.Drawing.Imaging.ImageFormat.Png);
+            status.Text = "报告分享图已导出到所选位置";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException or System.Security.SecurityException or System.Runtime.InteropServices.ExternalException)
+        {
+            MessageBox.Show(this, ex is InvalidDataException ? ex.Message : "无法导出图片，请检查目标位置。",
                 "导出未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

@@ -103,6 +103,14 @@ try
             throw new InvalidOperationException("报告日期不应随系统区域设置改变");
     }
     finally { System.Globalization.CultureInfo.CurrentCulture = originalCulture; }
+    using var share = ShareCardRenderer.Render(reportData.RootElement, VisualThemes.Find("aurora"), demo: true);
+    using var lightShare = ShareCardRenderer.Render(reportData.RootElement, VisualThemes.Find("porcelain"), demo: true);
+    if (share.Width != 1200 || share.Height != 860 || share.GetPixel(5, 5) == lightShare.GetPixel(5, 5))
+        throw new InvalidOperationException("分享图尺寸或主题配色不正确");
+    if (args.Length == 2 && args[0] == "--render-demo")
+        share.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
+    if (args.Length == 2 && args[0] == "--render-demo-light")
+        lightShare.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
