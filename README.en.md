@@ -34,7 +34,7 @@ The screenshot shows an earlier Alpha interface with fictional demo data; the cu
 
 ## Data sources
 
-The table describes the current `main` branch. The published alpha.1 package predates low-quota alerts, appearance options, account switches, Claude account support, the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers, the 7/30-day views, model ranking, trend chart and price estimates.
+The table describes the current `main` branch. The Alpha 2 preview includes these features; see subsequent release notes for later source changes.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.1](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.2](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.2), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 

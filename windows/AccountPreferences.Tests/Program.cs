@@ -81,6 +81,11 @@ try
     if (alerts.Evaluate(Snapshot(35, 101), now.AddMinutes(17)).Count != 0 || alerts.Evaluate(Snapshot(10, 101), now.AddMinutes(17)).Count != 1 ||
         alerts.Evaluate(Snapshot(10, 102, "disabled"), now.AddMinutes(17)).Count != 0)
         throw new InvalidOperationException("额度恢复或关闭来源后的提醒错误");
+    var kimi = JsonSerializer.SerializeToElement(new { other_accounts = new Dictionary<string, object> {
+        ["Kimi Code"] = new { status = "available", quota = new { value = new[] { new { bucket = "monthTotal", remaining_percent = 10 } } } }
+    } });
+    if (!new QuotaAlerts().Evaluate(kimi, now).Single().Contains("月度总额"))
+        throw new InvalidOperationException("Kimi 月度额度提醒应显示中文名称");
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)

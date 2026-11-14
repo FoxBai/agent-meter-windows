@@ -35,7 +35,7 @@
 
 ## 数据来源
 
-下表描述当前 `main` 分支。已发布的 alpha.1 安装包早于新增的额度提醒、界面风格、账户查询开关、Claude Code 账户接入、Kimi、OpenCode、MiniMax Code、MiMo Code、DevECo、Qoder CN 读取器及 7/30 天视图、模型排行、趋势图和价格估算。
+下表描述当前 `main` 分支。Alpha 2 预览包包含本表所列功能；后续源码改动以对应发布说明为准。
 
 | 来源 | 账户额度 | 本机 Token 历史 |
 | --- | --- | --- |
@@ -62,7 +62,7 @@
 
 ### 下载预览版
 
-前往 [Windows v0.1.0-alpha.1 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含运行环境。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互和另一台全新 Windows 实机尚未验证。
+前往 [Windows v0.1.0-alpha.2 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.2)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含运行环境。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互、主题和另一台全新 Windows 实机尚未验证。
 
 ### 从源码构建
 
