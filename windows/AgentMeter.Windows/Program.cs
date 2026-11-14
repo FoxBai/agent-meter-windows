@@ -960,6 +960,8 @@ internal sealed class MeterWindow : Form
     void LayoutGauges()
     {
         var items = gauges.Controls.OfType<QuotaGauge>().ToArray();
+        bool scroll = items.Length > 4;
+        if (gauges.AutoScroll != scroll) gauges.AutoScroll = scroll;
         if (items.Length == 0) return;
         int width = items.Length <= 4 ? Math.Clamp(gauges.ClientSize.Width / items.Length - 7, 70, 95) : 95;
         foreach (var item in items) item.Width = width;
