@@ -227,6 +227,7 @@ internal sealed class MeterContext : ApplicationContext
 internal sealed class MeterWindow : Form
 {
     enum View { Accounts, Applications, Usage, Report, Forecast, Collection }
+    enum ApplicationFilter { All, Recent, Other }
     VisualTheme theme;
     Color Background => theme.Background;
     Color Card => theme.Card;
@@ -252,6 +253,8 @@ internal sealed class MeterWindow : Form
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
     Size preferredSize;
     View view = View.Accounts;
+    ApplicationFilter applicationFilter = ApplicationFilter.All;
+    readonly HashSet<string> expandedApplications = new(StringComparer.Ordinal);
     string? lastSnapshot;
     public string? CurrentSnapshot => lastSnapshot;
     internal WorkBuddyBrowser WorkBuddyBrowser => workBuddyBrowser;
@@ -352,6 +355,21 @@ internal sealed class MeterWindow : Form
         content.AutoScrollPosition = Point.Empty;
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
+        SetView(View.Applications);
+        var expandApp = content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
+            .FirstOrDefault(button => button.Name == "app-expand-Codex") ?? throw new InvalidOperationException("application_card_missing");
+        expandApp.PerformClick(); Application.DoEvents();
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
+            .Any(label => label.Name == "app-details-Codex" && label.Text.Contains("本机记录不按登录账户区分")))
+            throw new InvalidOperationException("application_expand_failed");
+        SavePreview("aurora-applications-expanded-narrow");
+        var recentFilter = content.Controls.OfType<Panel>().SelectMany(panel => panel.Controls.OfType<Button>())
+            .FirstOrDefault(button => button.Name == "app-filter-Recent") ?? throw new InvalidOperationException("application_filter_missing");
+        recentFilter.PerformClick(); Application.DoEvents();
+        if (applicationFilter != ApplicationFilter.Recent || content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Button>())
+            .Any(button => button.Name == "app-expand-Claude Code")) throw new InvalidOperationException("application_filter_failed");
+        SavePreview("aurora-applications-recent-narrow");
+        applicationFilter = ApplicationFilter.All; expandedApplications.Clear();
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
         bool HasCard(string name) => content.Controls.OfType<RoundedCard>()
@@ -550,6 +568,7 @@ internal sealed class MeterWindow : Form
             if (demo)
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
+                sample["activity"]!["sources"] = JsonNode.Parse("""{"Codex":"available","Claude Code":"available","Kimi Code":"available"}""");
                 var daily = new JsonArray();
                 int[] demoDailyThousands = [324, 480, 550, 710, 280, 820, 650, 840, 1030, 610,
                     680, 810, 910, 930, 1230, 850, 660, 1050, 930, 880,
@@ -841,7 +860,7 @@ internal sealed class MeterWindow : Form
         AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
         AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"), GetValue(localHistories, "WorkBuddy"));
         }
-        else if (view == View.Applications) AddApplications(GetValue(root, "activity"));
+        else if (view == View.Applications) AddApplications(root);
         else if (view == View.Usage)
         {
         AddHeading("本机 Token", "只统计本设备可读取的会话记录");
@@ -1035,28 +1054,81 @@ internal sealed class MeterWindow : Form
         }
     }
 
-    void AddApplications(JsonElement activity)
+    void AddApplications(JsonElement root)
     {
-        AddHeading("应用活动", "近 24 小时的本机记录 · 不代表进程状态");
-        var apps = GetValue(activity, "apps");
-        if (apps.ValueKind != JsonValueKind.Array || apps.GetArrayLength() == 0)
+        AddHeading("应用概览", "额度、本机用量与活动记录分别统计");
+        var activity = GetValue(root, "activity");
+        var apps = ApplicationOverview.Build(root);
+        var filters = new Panel { Height = 42, Margin = new Padding(0, 0, 0, 12), BackColor = Background };
+        var buttons = new List<Button>();
+        foreach (var (filter, label) in new[] { (ApplicationFilter.All, "全部"), (ApplicationFilter.Recent, "近期有更新"), (ApplicationFilter.Other, "其他") })
         {
-            string note = GetString(activity, "status", "") switch { "error" => "活动记录读取失败，请稍后刷新",
-                "partial" => "部分来源读取不完整，暂无可展示记录", _ => "未发现可展示的活动记录，或来源暂不支持" };
-            AddCard("近期活动", "暂无数据", note, null);
-            return;
+            var button = new Button { Text = label, Name = "app-filter-" + filter, Height = 34, FlatStyle = FlatStyle.Flat,
+                BackColor = applicationFilter == filter ? theme.Selected : Card,
+                ForeColor = applicationFilter == filter ? Color.White : Primary, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold) };
+            button.FlatAppearance.BorderSize = 0;
+            button.Click += (_, _) => { applicationFilter = filter; if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); } };
+            buttons.Add(button); filters.Controls.Add(button);
         }
+        filters.Resize += (_, _) =>
+        {
+            int width = Math.Max(1, (filters.ClientSize.Width - 8) / 3);
+            for (int index = 0; index < buttons.Count; index++) { buttons[index].Width = width; buttons[index].Left = index * (width + 4); }
+        };
+        content.Controls.Add(filters);
+        AddHeading("数据覆盖", "近 15 分钟有记录更新 ≠ 应用正在运行");
         if (GetString(activity, "status", "") == "partial")
-            AddCard("读取范围", "部分来源不完整", "不同客户端的活动记录覆盖范围不同", null);
-        foreach (var app in apps.EnumerateArray())
+            AddCard("读取范围", "部分来源不完整", "不同客户端的记录覆盖范围不同", null);
+        var visible = apps.Where(app => applicationFilter == ApplicationFilter.All ||
+            (applicationFilter == ApplicationFilter.Recent ? app.RecentUpdates > 0 : app.RecentUpdates == 0)).ToArray();
+        if (visible.Length == 0)
         {
-            string name = GetString(app, "name", "应用");
-            var sessions = GetNumber(app, "sessions"); var recent = GetNumber(app, "recent_updates");
-            var last = GetNumber(app, "last_updated");
-            if (!sessions.HasValue || !recent.HasValue || !last.HasValue || last.Value < 0 || last.Value > 253402300799) continue;
-            string when = DateTimeOffset.FromUnixTimeSeconds((long)last.Value).LocalDateTime.ToString("MM-dd HH:mm");
-            AddCard(name, $"{sessions:0} 条活动记录", $"采集时 15 分钟内更新：{recent:0} 条", null, "最后更新 " + when + "（本机时间）");
+            string note = applicationFilter != ApplicationFilter.All ? "该筛选下暂无记录" :
+                GetString(GetValue(GetValue(root, "history"), "历史统计"), "status", "") == "loading" ? "本机记录正在扫描" : "未发现可展示的数据，或来源暂不支持";
+            AddCard("应用概览", "暂无数据", note, null); return;
         }
+        foreach (var app in visible) AddApplicationCard(app);
+    }
+    void AddApplicationCard(ApplicationOverview app)
+    {
+        bool expanded = expandedApplications.Contains(app.Name);
+        var identity = ProviderStyle.For(app.Name);
+        var box = new RoundedCard(theme, identity.Color) { Height = expanded ? 196 : 88,
+            Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new ProviderMark(identity) { Location = new Point(16, 14), Size = new Size(34, 34) });
+        var toggle = new Button { Name = "app-expand-" + app.Name, Text = app.Name + (expanded ? "  ▾" : "  ▸"),
+            AccessibleName = (expanded ? "收起 " : "展开 ") + app.Name, Height = 29, Location = new Point(58, 10),
+            FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent, ForeColor = Primary, TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font(Font.FontFamily, 10F, FontStyle.Bold) };
+        toggle.FlatAppearance.BorderSize = 0;
+        toggle.Click += (_, _) =>
+        {
+            var scroll = content.AutoScrollPosition;
+            if (!expandedApplications.Add(app.Name)) expandedApplications.Remove(app.Name);
+            if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+            content.PerformLayout(); content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
+        };
+        string activityText = app.Activity.StartsWith("有记录", StringComparison.Ordinal) ? $"近 24 小时 {app.Sessions} 条 · 近 15 分钟更新 {app.RecentUpdates} 条" +
+            (app.Activity.Contains("部分", StringComparison.Ordinal) ? " · 不完整" : "") : app.Activity;
+        var subtitle = new Label { Text = activityText, Location = new Point(60, 45), Height = 22, ForeColor = Muted, AutoEllipsis = true };
+        var today = new Label { Text = app.Today.HasValue ? "今日 " + FormatNumber(app.Today.Value) : "今日未提供",
+            ForeColor = Accent, AutoSize = true, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), Location = new Point(0, 16) };
+        box.Controls.AddRange([toggle, subtitle, today]);
+        if (expanded)
+        {
+            string total = app.All.HasValue ? " · 累计 " + FormatNumber(app.All.Value) : "";
+            string last = app.LastUpdated.HasValue ? " · 最后更新 " + DateTimeOffset.FromUnixTimeSeconds(app.LastUpdated.Value).LocalDateTime.ToString("MM-dd HH:mm") : "";
+            box.Controls.Add(new Label { Name = "app-details-" + app.Name, Text = "账户额度：" + app.Quota + "\n本机 Token：" + app.Local + total + "\n活动记录：" + app.Activity + last + "\n本机记录不按登录账户区分", ForeColor = Muted,
+                Location = new Point(16, 82), Height = 102, AutoEllipsis = true });
+        }
+        box.Resize += (_, _) =>
+        {
+            today.Left = Math.Max(58, box.ClientSize.Width - today.Width - 16);
+            toggle.Width = Math.Max(0, today.Left - toggle.Left - 6);
+            subtitle.Width = Math.Max(0, box.ClientSize.Width - 76);
+            foreach (Control child in box.Controls) if (child.Name == "app-details-" + app.Name) child.Width = Math.Max(0, box.ClientSize.Width - 32);
+        };
+        StyleCard(box); content.Controls.Add(box);
     }
     void AddMiniMaxAccount(JsonElement account, string accountLabel)
     {

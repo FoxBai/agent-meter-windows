@@ -220,22 +220,40 @@ def compact_activity(payload, now):
              "kimi_desktop": "Kimi 桌面端", "kimi_legacy": "Kimi CLI（旧版）", "deepseek_harness": "DeepSeek Harness",
              "claude": "Claude Code", "gemini": "Gemini CLI", "opencode": "OpenCode", "mimo_code": "MiMo Code", "deveco": "DevECo"}
     groups = {}
+    invalid_sources = set()
     for row in payload.get("activities", []):
         if not isinstance(row, dict) or row.get("app") not in names:
             continue
         stamp = row.get("last_event_at")
         stamp = stamp.get("epoch_seconds") if isinstance(stamp, dict) else None
         if isinstance(stamp, bool) or not isinstance(stamp, (int, float)) or not math.isfinite(stamp) or not 0 <= stamp <= now:
+            invalid_sources.add(row["app"])
             continue
         item = groups.setdefault(row["app"], {"name": names[row["app"]], "sessions": 0, "recent_updates": 0, "last_updated": 0})
         item["sessions"] += 1
         item["recent_updates"] += int(now - stamp <= 15 * 60)
         item["last_updated"] = max(item["last_updated"], int(stamp))
     meta = payload.get("sources_meta")
-    incomplete = not isinstance(meta, dict) or any(isinstance(item, dict) and
+    incomplete = bool(invalid_sources) or not isinstance(meta, dict) or any(isinstance(item, dict) and
         (item.get("status") == "error" or (item.get("status") == "not_connected" and item.get("reason") and
          not str(item.get("reason")).endswith("_not_found") and item.get("reason") != "disabled_by_user")) for item in meta.values())
+    sources = {}
+    if isinstance(meta, dict):
+        for key, name in names.items():
+            item = meta.get(key)
+            if not isinstance(item, dict):
+                continue
+            status, reason = item.get("status"), item.get("reason")
+            if status == "available":
+                sources[name] = "partial" if key in invalid_sources else "available"
+            elif status == "not_connected" and reason == "disabled_by_user":
+                sources[name] = "disabled"
+            elif status == "not_connected" and isinstance(reason, str) and reason.endswith("_not_found"):
+                sources[name] = "not_found"
+            else:
+                sources[name] = "unavailable"
     return {"status": "partial" if incomplete else "available", "window_hours": 24, "idle_minutes": 15,
+            "sources": sources,
             "apps": sorted(groups.values(), key=lambda item: (-item["recent_updates"], -item["last_updated"], item["name"]))}
 
 

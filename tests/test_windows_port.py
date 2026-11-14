@@ -520,6 +520,23 @@ class WindowsBackendTests(unittest.TestCase):
             'two': {'status': 'not_connected', 'reason': 'sessions_not_found'}}}, 1800000000)
         self.assertEqual(result['status'], 'partial')
 
+    def test_activity_coverage_exposes_only_safe_statuses(self):
+        result = backend.compact_activity({'activities': [], 'sources_meta': {
+            'codex': {'status': 'available', 'path': 'private-path'},
+            'kimi': {'status': 'not_connected', 'reason': 'kimi_sessions_not_found'},
+            'claude': {'status': 'error', 'reason': 'private-error'},
+            'opencode': {'status': 'not_connected', 'reason': 'disabled_by_user'},
+            'unknown': {'status': 'available'}}}, 1800000000)
+        self.assertEqual(result['sources'], {'Codex': 'available', 'Kimi Code': 'not_found',
+                                             'Claude Code': 'unavailable', 'OpenCode': 'disabled'})
+        self.assertNotIn('private', json.dumps(result))
+        self.assertNotIn('unknown', json.dumps(result))
+        malformed = backend.compact_activity({'activities': [{'app': 'codex', 'last_event_at': {'epoch_seconds': True}}],
+                                              'sources_meta': {'codex': {'status': 'available'}}}, 1800000000)
+        self.assertEqual(malformed['sources']['Codex'], 'partial')
+        self.assertEqual(malformed['status'], 'partial')
+        self.assertEqual(malformed['apps'], [])
+
     def test_estimated_cost_uses_known_groups_and_marks_unknown_models(self):
         priced = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                   'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}

@@ -36,6 +36,25 @@ try
     using (var unavailable = JsonDocument.Parse(localItem.ToJsonString()))
         if (AccountLocalUsage.Read(unavailable.RootElement) is not null)
             throw new InvalidOperationException("不可用的本机账本不应显示为已读取");
+    using (var overview = JsonDocument.Parse("""
+        {"account":{"status":"available","quota":{"value":[{"remaining_percent":50}]}},
+         "other_accounts":{"Claude Code":{"status":"disabled"},"MiniMax Code":[{"status":"available","quota":{"value":[{}]}},{"status":"error"}]},
+         "history":{"Codex":{"status":"partial","value":{"periods":{"today":{"totals":{"total_tokens":15}},"all":{"totals":{"total_tokens":80}}}}},
+                    "Claude Code":{"status":"available","value":{"periods":{"all":{"totals":{"total_tokens":50}}}}},
+                    "Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},
+         "activity":{"sources":{"Codex":"available","Claude Code":"available","Gemini CLI":"not_found"},
+           "apps":[{"name":"Codex","sessions":3,"recent_updates":2,"last_updated":1800000000}]}}
+        """))
+    {
+        var rows = ApplicationOverview.Build(overview.RootElement);
+        var codex = rows.First(row => row.Name == "Codex");
+        var claude = rows.First(row => row.Name == "Claude Code");
+        var minimaxOverview = rows.First(row => row.Name == "MiniMax Code");
+        if (rows[0].Name != "Codex" || codex.Quota != "可用" || codex.Local != "部分可用" || codex.Today != 15 || codex.All != 80 || codex.RecentUpdates != 2 ||
+            claude.Quota != "已关闭" || claude.Today is not null || claude.Activity != "近 24 小时无记录" || minimaxOverview.Quota != "部分可用" ||
+            rows.Any(row => row.Name == "Gemini CLI"))
+            throw new InvalidOperationException("应用概览混淆了额度、本机用量或活动状态");
+    }
     var cardSnapshot = JsonNode.Parse("""{"account":{"status":"available","private":"SECRET_MARKER","quota":{"status":"available","unused":"SECRET_MARKER","value":[{"bucket":"codex","window_minutes":300,"remaining_percent":55,"resets_at":{"epoch_seconds":1800003600,"extra":"SECRET_MARKER"},"private":"SECRET_MARKER"}]}},"other_accounts":{"MiniMax Code":[{"label":"演示账户","status":"available","key":"SECRET_MARKER","quota":{"value":[{"bucket":"5h","remaining_percent":50,"resets_at":{"epoch_seconds":1800003600}}]}}],"unknown":{"secret":"SECRET_MARKER"}}}""")!.AsObject();
     string cardInput = CardInput.Create(cardSnapshot);
     if (cardInput.Contains("SECRET_MARKER", StringComparison.Ordinal)) throw new InvalidOperationException("卡册输入包含多余字段");

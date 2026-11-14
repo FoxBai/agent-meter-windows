@@ -14,6 +14,12 @@ internal sealed record ProviderStyle(string DisplayName, string Initial, Color C
             ("KIMI CODE", "Kimi Code", "K", Color.FromArgb(70, 121, 229)),
             ("MINIMAX CODE", "MiniMax Code", "M", Color.FromArgb(212, 72, 132)),
             ("WORKBUDDY", "WorkBuddy", "W", Color.FromArgb(71, 145, 215)),
+            ("ZCODE", "ZCode", "Z", Color.FromArgb(72, 111, 229)),
+            ("GEMINI CLI", "Gemini CLI", "G", Color.FromArgb(73, 128, 215)),
+            ("DEEPSEEK HARNESS", "DeepSeek Harness", "D", Color.FromArgb(76, 122, 225)),
+            ("OPENCODE", "OpenCode", "O", Color.FromArgb(126, 100, 215)),
+            ("MIMO CODE", "MiMo Code", "M", Color.FromArgb(223, 133, 48)),
+            ("DEVECO", "DevECo", "D", Color.FromArgb(100, 138, 180)),
         };
         foreach (var choice in choices)
             if (provider.StartsWith(choice.Prefix, StringComparison.OrdinalIgnoreCase))
