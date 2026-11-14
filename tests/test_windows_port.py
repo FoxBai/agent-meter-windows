@@ -393,7 +393,8 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(result['value'], {'periods': {'today': {'totals': {'total_tokens': 12, 'cache_read': 8}},
                                                        '7d': {'totals': {'total_tokens': 20}},
                                                        '30d': {'totals': {'total_tokens': 35}},
-                                                       'all': {'totals': {'total_tokens': 60}}}})
+                                                       'all': {'totals': {'total_tokens': 60}}}, 'daily_trend': None})
+        self.assertNotIn('not sent', json.dumps(result))
 
     def test_worker_refreshes_changed_session_and_rejects_unknown_commands(self):
         stamp = datetime.now(timezone.utc).isoformat()
@@ -452,6 +453,26 @@ class WindowsBackendTests(unittest.TestCase):
                                               {'date': '2026-11-15', 'tokens': 10}])
         self.assertEqual(trend['sources'], 2)
         self.assertTrue(trend['incomplete'])
+
+    def test_account_card_trend_is_bounded_and_excludes_private_fields(self):
+        now = datetime(2026, 11, 14, 16, 30, tzinfo=timezone.utc).timestamp()
+        source = {'version': 1, 'observed_at': now, 'account': {}, 'history': {'Codex': {
+            'status': 'partial', 'value': {'periods': {'today': {'totals': {'total_tokens': 15}}},
+                'daily_buckets': [{'date': '2026-11-14', 'tokens': 15, 'session': 'private'},
+                                  {'date': '2026-11-15', 'tokens': 7},
+                                  {'date': '2026-11-15', 'tokens': 3},
+                                  {'date': '2026-10-16', 'tokens': 99},
+                                  {'date': '2026-11-16', 'tokens': 99},
+                                  {'date': '2026-11-14', 'tokens': True}]}}}}
+        item = backend.compact_history(source)['history']['Codex']
+        trend = item['value']['daily_trend']
+        self.assertEqual(len(trend['days']), 30)
+        self.assertEqual(trend['days'][0], {'date': '2026-10-17', 'tokens': 0})
+        self.assertEqual(trend['days'][-2:], [{'date': '2026-11-14', 'tokens': 15},
+                                              {'date': '2026-11-15', 'tokens': 10}])
+        self.assertTrue(trend['incomplete'])
+        self.assertNotIn('private', json.dumps(item))
+        self.assertIsNone(backend.source_daily_trend({'status': 'available', 'value': {}}, now))
 
     def test_calendar_report_uses_natural_periods_and_marks_missing_data(self):
         now = datetime(2026, 1, 1, 4, 0, tzinfo=timezone.utc).timestamp()

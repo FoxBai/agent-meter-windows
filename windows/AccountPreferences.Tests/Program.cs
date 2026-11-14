@@ -15,6 +15,27 @@ try
         ProviderStyle.For("unknown service").DisplayName != "unknown service" ||
         ProviderStyle.For("CODEX").Color == ProviderStyle.For("CLAUDE CODE").Color)
         throw new InvalidOperationException("服务标识或账户别名显示不正确");
+    var localDays = new JsonArray();
+    for (int index = 0; index < 30; index++)
+        localDays.Add(new JsonObject { ["date"] = new DateOnly(2026, 1, 1).AddDays(index).ToString("yyyy-MM-dd"), ["tokens"] = index });
+    var localItem = new JsonObject { ["status"] = "partial", ["value"] = new JsonObject {
+        ["periods"] = JsonNode.Parse("""{"today":{"totals":{"total_tokens":15}},"30d":{"totals":{"total_tokens":100}}}"""),
+        ["daily_trend"] = new JsonObject { ["days"] = localDays, ["incomplete"] = false } } };
+    using (var localDoc = JsonDocument.Parse(localItem.ToJsonString()))
+    {
+        var local = AccountLocalUsage.Read(localDoc.RootElement);
+        if (local is null || local.Today != 15 || local.ThirtyDays != 100 || local.All is not null ||
+            local.Trend?.Count != 30 || !local.Incomplete)
+            throw new InvalidOperationException("账户卡片的本机用量或不完整状态不正确");
+    }
+    localDays[5]!["date"] = "2026-02-20";
+    using (var invalidTrend = JsonDocument.Parse(localItem.ToJsonString()))
+        if (AccountLocalUsage.Read(invalidTrend.RootElement)?.Trend is not null)
+            throw new InvalidOperationException("非连续的本机逐日数据不应绘制为趋势");
+    localItem["status"] = "unavailable";
+    using (var unavailable = JsonDocument.Parse(localItem.ToJsonString()))
+        if (AccountLocalUsage.Read(unavailable.RootElement) is not null)
+            throw new InvalidOperationException("不可用的本机账本不应显示为已读取");
     var cardSnapshot = JsonNode.Parse("""{"account":{"status":"available","private":"SECRET_MARKER","quota":{"status":"available","unused":"SECRET_MARKER","value":[{"bucket":"codex","window_minutes":300,"remaining_percent":55,"resets_at":{"epoch_seconds":1800003600,"extra":"SECRET_MARKER"},"private":"SECRET_MARKER"}]}},"other_accounts":{"MiniMax Code":[{"label":"演示账户","status":"available","key":"SECRET_MARKER","quota":{"value":[{"bucket":"5h","remaining_percent":50,"resets_at":{"epoch_seconds":1800003600}}]}}],"unknown":{"secret":"SECRET_MARKER"}}}""")!.AsObject();
     string cardInput = CardInput.Create(cardSnapshot);
     if (cardInput.Contains("SECRET_MARKER", StringComparison.Ordinal)) throw new InvalidOperationException("卡册输入包含多余字段");

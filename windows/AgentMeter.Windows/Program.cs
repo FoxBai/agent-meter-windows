@@ -340,6 +340,12 @@ internal sealed class MeterWindow : Form
                 SavePreview(option.Id + "-" + name);
             }
         }
+        Size = new Size(500, 1100);
+        SetTheme(VisualThemes.Find("aurora")); SetView(View.Accounts);
+        if (!content.Controls.OfType<RoundedCard>().SelectMany(card => card.Controls.OfType<Label>())
+            .Any(label => label.Text == "本机 Token · 未按账户区分"))
+            throw new InvalidOperationException("account_local_usage_missing");
+        SavePreview("aurora-account-local-detail");
         Size = new Size(420, 760);
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
@@ -540,6 +546,11 @@ internal sealed class MeterWindow : Form
             if (demo)
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
+                var daily = new JsonArray();
+                for (int index = 0; index < 30; index++)
+                    daily.Add(new JsonObject { ["date"] = new DateOnly(2026, 10, 16).AddDays(index).ToString("yyyy-MM-dd"),
+                        ["tokens"] = 100000 + (index * 7919 % 9) * 85000 });
+                sample["history"]!["Codex"]!["value"]!["daily_trend"] = new JsonObject { ["days"] = daily, ["incomplete"] = false };
                 sample["other_accounts"]!["DeepSeek API"] = JsonNode.Parse("""{"status":"available","credits":{"value":[{"unit":"CNY","total":"88.00","granted":"8.00","topped_up":"80.00"}]}}""");
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
                 sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
@@ -730,6 +741,7 @@ internal sealed class MeterWindow : Form
         if (view == View.Accounts)
         {
         AddHeading("账户额度", "来自账户接口 · 与本机 Token 分开统计");
+        var localHistories = GetValue(root, "history");
         var account = GetValue(root, "account"); var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
         {
@@ -743,7 +755,7 @@ internal sealed class MeterWindow : Form
                 string prefix = bucket.Equals("codex", StringComparison.OrdinalIgnoreCase) ? "" : bucket.ToUpperInvariant() + " · ";
                 rows.Add(new QuotaRow(prefix + period, remaining, ResetNote(q)));
             }
-            AddQuotaGroup("CODEX", rows);
+            AddQuotaGroup("CODEX", rows, GetValue(localHistories, "Codex"));
         }
         else if (GetString(account, "status", "") == "disabled") AddCard("CODEX", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else AddCard("CODEX", "暂时无法获取额度", Reason(account), null);
@@ -787,7 +799,7 @@ internal sealed class MeterWindow : Form
                     double? remaining = GetNumber(q, "remaining_percent");
                     rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
                 }
-                AddQuotaGroup("KIMI CODE", rows);
+                AddQuotaGroup("KIMI CODE", rows, GetValue(localHistories, "Kimi Code"));
             }
             else if (kimiStatus == "disabled") AddCard("KIMI CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
             else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
@@ -807,7 +819,7 @@ internal sealed class MeterWindow : Form
                 double? remaining = GetNumber(q, "remaining_percent");
                 rows.Add(new QuotaRow(label, remaining, ResetNote(q)));
             }
-            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows);
+            if (rows.Count > 0) AddQuotaGroup("CLAUDE CODE", rows, GetValue(localHistories, "Claude Code"));
         }
         else if (GetString(claudeAccount, "status", "") == "disabled") AddCard("CLAUDE CODE", "账户查询已关闭", "可在托盘菜单重新开启", null);
         else if (GetString(claudeAccount, "reason", "") is not ("" or "claude_subscription_login_missing"))
@@ -820,7 +832,7 @@ internal sealed class MeterWindow : Form
         }
         else AddMiniMaxAccount(minimaxAccount, "");
         AddDeepSeekBalance(GetValue(otherAccounts, "DeepSeek API"));
-        AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"));
+        AddWorkBuddyAccount(GetValue(otherAccounts, "WorkBuddy"), GetValue(localHistories, "WorkBuddy"));
         }
         else if (view == View.Applications) AddApplications(GetValue(root, "activity"));
         else if (view == View.Usage)
@@ -1087,7 +1099,7 @@ internal sealed class MeterWindow : Form
         };
         AddCard("DEEPSEEK API", "暂时无法获取余额", note, null);
     }
-    void AddWorkBuddyAccount(JsonElement account)
+    void AddWorkBuddyAccount(JsonElement account, JsonElement localHistory)
     {
         string status = GetString(account, "status", "disabled");
         if (status == "disabled") return;
@@ -1102,7 +1114,7 @@ internal sealed class MeterWindow : Form
                 var rows = new List<QuotaRow>();
                 foreach (var item in quota.EnumerateArray())
                     rows.Add(new QuotaRow("积分额度", GetNumber(item, "remaining_percent"), ResetNote(item)));
-                if (rows.Count > 0) { AddQuotaGroup("WORKBUDDY", rows); shown = true; }
+                if (rows.Count > 0) { AddQuotaGroup("WORKBUDDY", rows, localHistory); shown = true; }
             }
             string balance = GetString(credits, "balance", ""), total = GetString(credits, "total", ""), frozen = GetString(credits, "frozen", "");
             if (balance.Length is > 0 and <= 40 && total.Length <= 40 && frozen.Length <= 40)
@@ -1352,7 +1364,7 @@ internal sealed class MeterWindow : Form
         catch (ArgumentException) { return "重置时间未提供"; }
     }
 
-    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows)
+    void AddQuotaGroup(string provider, IReadOnlyList<QuotaRow> rows, JsonElement localHistory = default)
     {
         int shown = Math.Min(rows.Count, 40);
         if (shown == 0) return;
@@ -1381,6 +1393,38 @@ internal sealed class MeterWindow : Form
                 amount.Left = Math.Max(16, box.ClientSize.Width - amount.Width - 16);
                 name.Width = Math.Max(0, amount.Left - name.Left - 8);
                 bar.Width = Math.Max(0, box.ClientSize.Width - 32);
+            };
+        }
+        var usage = AccountLocalUsage.Read(localHistory);
+        if (usage is not null)
+        {
+            int top = 62 + shown * 70;
+            box.Height += usage.Trend is null ? 86 : 166;
+            var divider = new Panel { Location = new Point(16, top), Height = 1, BackColor = theme.Border };
+            var title = new Label { Text = "本机 Token · 未按账户区分", Font = new Font(Font.FontFamily, 9F, FontStyle.Bold),
+                ForeColor = Muted, Location = new Point(16, top + 10), Height = 22, AutoEllipsis = true };
+            var parts = new List<string>();
+            if (usage.Today.HasValue) parts.Add("今日 " + FormatNumber(usage.Today.Value));
+            if (usage.ThirtyDays.HasValue) parts.Add("近 30 天 " + FormatNumber(usage.ThirtyDays.Value));
+            if (usage.All.HasValue) parts.Add("累计 " + FormatNumber(usage.All.Value));
+            var summary = new Label { Text = string.Join("  ·  ", parts), ForeColor = Primary,
+                Location = new Point(16, top + 34), Height = 22, AutoEllipsis = true };
+            var note = new Label { Text = usage.Incomplete ? "部分本机记录不完整" : "与账户额度分别统计",
+                Font = new Font(Font.FontFamily, 8F), ForeColor = Muted, Location = new Point(16, top + 57), Height = 20, AutoEllipsis = true };
+            box.Controls.AddRange([divider, title, summary, note]);
+            TokenSparkline? chart = null;
+            if (usage.Trend is not null)
+            {
+                var label = new Label { Text = "近 30 个自然日 · 北京时间", Font = new Font(Font.FontFamily, 8F),
+                    ForeColor = Muted, Location = new Point(16, top + 82), Height = 20, AutoEllipsis = true };
+                chart = new TokenSparkline(usage.Trend, identity.Color) { Location = new Point(16, top + 104), Height = 52 };
+                box.Controls.AddRange([label, chart]);
+                box.Resize += (_, _) => label.Width = Math.Max(0, box.ClientSize.Width - 32);
+            }
+            box.Resize += (_, _) =>
+            {
+                divider.Width = title.Width = summary.Width = note.Width = Math.Max(0, box.ClientSize.Width - 32);
+                if (chart is not null) chart.Width = Math.Max(0, box.ClientSize.Width - 32);
             };
         }
         StyleCard(box); content.Controls.Add(box);

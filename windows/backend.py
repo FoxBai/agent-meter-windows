@@ -340,6 +340,39 @@ def recent_daily_trend(result):
             "sources": sources, "incomplete": incomplete} if sources else None
 
 
+def source_daily_trend(item, observed_at):
+    """只传递单个账本最近 30 个北京时间自然日的汇总，不传项目或会话字段。"""
+    value = item.get("value")
+    rows = value.get("daily_buckets") if isinstance(value, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    today = datetime.fromtimestamp(observed_at, DISPLAY_ZONE).date()
+    days = [(today - timedelta(days=offset)).isoformat() for offset in range(29, -1, -1)]
+    totals = dict.fromkeys(days, 0)
+    incomplete = item.get("status") != "available"
+    valid_rows = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            incomplete = True
+            continue
+        day, count = row.get("date"), row.get("tokens")
+        if not isinstance(day, str) or not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            incomplete = True
+            continue
+        try:
+            if date.fromisoformat(day).isoformat() != day:
+                raise ValueError()
+        except ValueError:
+            incomplete = True
+            continue
+        valid_rows += 1
+        if day in totals:
+            totals[day] += count
+    if not valid_rows:
+        return None
+    return {"days": [{"date": day, "tokens": totals[day]} for day in days], "incomplete": incomplete}
+
+
 def calendar_report(result):
     """汇总北京时间自然周和自然月；当前周期为截至采集时的部分周期。"""
     today = datetime.fromtimestamp(result["observed_at"], DISPLAY_ZONE).date()
@@ -624,8 +657,11 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
                     groups.sort(key=lambda row: row["total_tokens"], reverse=True)
                     selected[period]["groups"] = groups[:20]
                     selected[period]["groups_truncated"] = len(groups) > 20
+        compact_value = {"periods": selected} if selected else None
+        if compact_value is not None:
+            compact_value["daily_trend"] = source_daily_trend(item, result["observed_at"])
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
-                                    "value": {"periods": selected} if selected else None}
+                                    "value": compact_value}
         try:
             estimated = estimate_source_cost(item, table) if table is not None else None
             cost = (estimated or {}).get("value", {}).get("periods", {}).get("today", {})
