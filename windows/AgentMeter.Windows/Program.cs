@@ -10,6 +10,13 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        // 构建机使用纯演示数据生成视觉检查图，不启动采集器或读取用户设置。
+        if (args.Length == 2 && args[0] == "--render-demo")
+        {
+            using var preview = new MeterWindow(demo: true, windowed: true);
+            preview.RenderDemoImages(args[1]);
+            return;
+        }
         bool demo = args.Contains("--demo");
         using var mutex = new Mutex(true, "Local\\AgentMeterWindows", out bool first);
         if (!first && !demo) return;
@@ -256,6 +263,28 @@ internal sealed class MeterWindow : Form
             Location = PanelPlacement.Find(screen.Bounds, screen.WorkingArea, Size, cursor, atCursor);
         }
         finally { positioning = false; }
+    }
+    internal void RenderDemoImages(string directory)
+    {
+        if (!demo) throw new InvalidOperationException("demo_required");
+        Directory.CreateDirectory(directory);
+        Location = new Point(-32000, -32000);
+        Show();
+        RefreshData().GetAwaiter().GetResult();
+        foreach (var option in VisualThemes.All)
+        {
+            SetTheme(option);
+            foreach (var (tab, name) in new[] { (View.Accounts, "accounts"), (View.Applications, "applications"),
+                                               (View.Usage, "usage"), (View.Report, "report") })
+            {
+                SetView(tab);
+                Application.DoEvents();
+                using var image = new Bitmap(Width, Height);
+                DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
+                image.Save(Path.Combine(directory, option.Id + "-" + name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
+        Hide();
     }
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
     void UpdateTabs()

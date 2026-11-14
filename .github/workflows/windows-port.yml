@@ -84,6 +84,16 @@ jobs:
           } finally {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id }
           }
+      - name: Render isolated demo previews
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path './windows/dist/AgentMeter/AgentMeter.Windows.exe') -ArgumentList '--render-demo', "$env:RUNNER_TEMP/agentmeter-previews" -WindowStyle Hidden -PassThru -Wait
+          if ($app.ExitCode -ne 0 -or @(Get-ChildItem "$env:RUNNER_TEMP/agentmeter-previews/*.png").Count -ne 28) { throw 'Demo preview generation failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentMeter-demo-previews
+          path: ${{ runner.temp }}/agentmeter-previews/*.png
+          if-no-files-found: error
       - name: Package portable build
         shell: pwsh
         run: ./windows/package.ps1
