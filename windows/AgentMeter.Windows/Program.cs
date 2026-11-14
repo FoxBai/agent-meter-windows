@@ -237,9 +237,10 @@ internal sealed class MeterWindow : Form
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
-        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 135);
+        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 144);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
+        gauges.Resize += (_, _) => LayoutGauges();
         header.Controls.Add(gauges);
         accountTab.Text = "账户额度"; applicationsTab.Text = "应用";
         usageTab.Text = "本机消耗"; reportTab.Text = "用量报告"; forecastTab.Text = "重置预测"; collectionTab.Text = "收集";
@@ -298,6 +299,15 @@ internal sealed class MeterWindow : Form
         SetTheme(VisualThemes.Find("aurora"));
         SetView(View.Accounts); SavePreview("aurora-accounts-narrow");
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
+        // 多账户需要横向滚动；额外预览用于检查滚动条是否挤压仪表。
+        var many = JsonNode.Parse(lastSnapshot!)!.AsObject();
+        var accounts = new JsonArray();
+        for (int index = 1; index <= 5; index++)
+            accounts.Add(new JsonObject { ["label"] = "演示" + index, ["status"] = "available",
+                ["quota"] = JsonNode.Parse("""{"value":[{"bucket":"5h","remaining_percent":55}]}""") });
+        many["other_accounts"]!["MiniMax Code"] = accounts;
+        using (var snapshot = JsonDocument.Parse(many.ToJsonString())) Render(snapshot.RootElement);
+        SetView(View.Accounts); SavePreview("aurora-many-accounts-narrow");
         Hide();
     }
     protected override void Dispose(bool disposing)
@@ -317,12 +327,15 @@ internal sealed class MeterWindow : Form
     void LayoutTabs()
     {
         var tabs = new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab };
+        string[] full = ["账户额度", "应用", "本机消耗", "用量报告", "重置预测", "收集"];
+        string[] compact = ["账户", "应用", "用量", "报告", "预测", "收集"];
         int width = Math.Max(1, (header.ClientSize.Width - 44 - 4 * (tabs.Length - 1)) / tabs.Length);
         for (int index = 0; index < tabs.Length; index++)
         {
             tabs[index].Size = new Size(width, 36);
             tabs[index].Location = new Point(22 + index * (width + 4), 228);
             tabs[index].Font = width < 70 ? tabCompact : tabRegular;
+            tabs[index].Text = width < 70 ? compact[index] : full[index];
         }
     }
     public string ThemeId => theme.Id;
@@ -942,6 +955,14 @@ internal sealed class MeterWindow : Form
         else AddGauge("MiniMax", minimax);
         if (gauges.Controls.Count == 0)
             gauges.Controls.Add(new Label { Text = "暂无可用账户额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+        LayoutGauges();
+    }
+    void LayoutGauges()
+    {
+        var items = gauges.Controls.OfType<QuotaGauge>().ToArray();
+        if (items.Length == 0) return;
+        int width = items.Length <= 4 ? Math.Clamp(gauges.ClientSize.Width / items.Length - 7, 70, 95) : 95;
+        foreach (var item in items) item.Width = width;
     }
     void AddGauge(string provider, JsonElement account)
     {
@@ -1191,7 +1212,7 @@ internal sealed class QuotaGauge : Control
     public QuotaGauge(string provider, QuotaWindowPair windows, VisualTheme theme)
     {
         this.provider = provider; this.windows = windows; this.theme = theme;
-        Size = new Size(95, 130); Margin = new Padding(0, 0, 7, 0);
+        Size = new Size(95, 126); Margin = new Padding(0, 0, 7, 0);
         AccessibleRole = AccessibleRole.Graphic;
         AccessibleName = $"{provider} {windows.Primary.Label}，剩余 {windows.Primary.Remaining:0.#}%" +
             (windows.Secondary is null ? "" : $"；{windows.Secondary.Label}，剩余 {windows.Secondary.Remaining:0.#}%");
@@ -1209,13 +1230,14 @@ internal sealed class QuotaGauge : Control
             e.Graphics.DrawArc(track, rect, -90, 359);
             if (remaining > 0) e.Graphics.DrawArc(fill, rect, -90, (float)(3.59 * remaining));
         }
-        var outer = new Rectangle(17, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);
+        int left = Math.Max(0, (Width - 60) / 2);
+        var outer = new Rectangle(left, 4, 60, 60); Ring(outer, windows.Primary.Remaining, theme.Accent);
         if (windows.Secondary is not null)
-            Ring(new Rectangle(25, 12, 44, 44), windows.Secondary.Remaining,
+            Ring(new Rectangle(left + 8, 12, 44, 44), windows.Secondary.Remaining,
                 theme.Light ? Color.FromArgb(103, 75, 159) : Color.FromArgb(178, 145, 255));
         using var valueFont = new Font(Font.FontFamily, 8F, FontStyle.Bold);
         using var small = new Font(Font.FontFamily, 8F);
-        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(29, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Remaining:0.#}%", valueFont, new Rectangle(left + 12, 16, 36, 36), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 67, Width, 20), theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         TextRenderer.DrawText(e.Graphics, $"{windows.Primary.Label} {windows.Primary.Remaining:0.#}%", small, new Rectangle(0, 88, Width, 19), theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         if (windows.Secondary is not null)
