@@ -9,6 +9,18 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 
 try
 {
+    Guid credentialId = Guid.NewGuid();
+    try
+    {
+        if (CredentialVault.Read("test", credentialId) is not null) throw new InvalidOperationException("随机测试凭据不应存在");
+        CredentialVault.Write("test", credentialId, "模拟密钥-A");
+        if (CredentialVault.Read("test", credentialId) != "模拟密钥-A") throw new InvalidOperationException("凭据读取失败");
+        CredentialVault.Write("test", credentialId, "模拟密钥-B");
+        if (CredentialVault.Read("test", credentialId) != "模拟密钥-B") throw new InvalidOperationException("凭据更新失败");
+        CredentialVault.Delete("test", credentialId);
+        if (CredentialVault.Read("test", credentialId) is not null) throw new InvalidOperationException("凭据删除失败");
+    }
+    finally { CredentialVault.Delete("test", credentialId); }
     if (AccountPreferences.Load(directory) != AccountPreferences.Enabled)
         throw new InvalidOperationException("首次运行应启用账户查询");
     var changed = new AccountPreferences(false, true, false);
