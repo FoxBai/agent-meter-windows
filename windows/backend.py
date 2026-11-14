@@ -516,7 +516,11 @@ def compact_history(result, price_table=_DEFAULT_PRICE_TABLE):
             pass
     compact["daily_trend"] = recent_daily_trend(result)
     compact["calendar_report"] = calendar_report(result)
-    compact["local_medals"] = local_medals(result)
+    try:
+        compact["local_medals"] = local_medals(result)
+    except (TypeError, ValueError, OverflowError, KeyError, AttributeError):
+        # 收集册属于附加展示，异常时不应阻断账户和本机用量页面。
+        compact["local_medals"] = {"medals": [], "sources": 0, "incomplete": True}
     compact["local_credits"] = {}
     for name, item in result.get("local_credits", {}).items():
         value = item.get("value")

@@ -50,6 +50,14 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertTrue(failed['incomplete'])
         self.assertEqual(failed['medals'], [])
 
+    def test_medal_failure_does_not_hide_local_usage(self):
+        source = {'version': 1, 'observed_at': time.time(), 'account': {'status': 'disabled'}, 'history': {}, 'local_credits': {}}
+        with patch('windows.backend.local_medals', side_effect=ValueError('synthetic')):
+            result = backend.compact_history(source)
+        self.assertEqual(result['history'], {})
+        self.assertTrue(result['local_medals']['incomplete'])
+        self.assertEqual(result['local_medals']['medals'], [])
+
     def test_forecast_projection_keeps_basis_and_never_invents_missing_values(self):
         source = {'status': 'partial', 'metrics': {'reset_forecast': {'value': {
             'cache_state': 'stale', 'sources': [
