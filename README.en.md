@@ -16,7 +16,7 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The Alpha 3 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
+The Alpha 4 screenshot was generated with fictional demo data on an isolated Windows runner; window borders may vary by Windows version. Actual availability depends on the agent, account, local files and version. See also the [local usage](windows/assets/usage-preview.png), [calendar report](windows/assets/report-preview.png), [reset forecast](windows/assets/forecast-preview.png) and [share card](windows/assets/report-share-preview.png) previews.
 
 ## What it does
 
@@ -26,7 +26,7 @@ The Alpha 3 screenshot was generated with fictional demo data on an isolated Win
 - **Desktop pet (in development)** — includes the upstream Mochi and Bit sprite packs, hidden by default. Users can show, switch and drag them from the tray menu; animations respond to low quota and recent local updates. Transparency and interaction still need device testing, and the upstream 3D characters and full interactions are not yet ported.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
-- **Grouped accounts (main branch, in development)** — quota windows from the same provider share one card for easier comparison. Alpha 3 still uses one card per window; the new layout needs device testing.
+- **Grouped accounts** — quota windows from the same provider share one card for easier comparison. The new layout needs device testing.
 - **Two-window gauges** — pairs a short window with the seven-day window where available, or shows a single ring otherwise. The layout still needs device testing.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
@@ -35,7 +35,7 @@ The Alpha 3 screenshot was generated with fictional demo data on an isolated Win
 - **Application activity** — summarizes recent local records by client, including how many were updated in the 15 minutes before collection. This is a recency signal, not proof a process is running or a task succeeded. Coverage varies.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
 - **Calendar reports** — shows local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. Export interaction still needs device testing.
-- **Reset forecasts (main branch, in development)** — an optional third-party forecast page shows each site's 24-hour and 48-hour estimates, labels model-based fallbacks and displays update times when available. Disabled by default and not in Alpha 3. Synthetic tests passed; two of three sites returned usable data in one isolated network check, while the interface still needs device testing. Forecasts are not an OpenAI promise or an account's own reset clock.
+- **Reset forecasts (in development)** — an optional third-party forecast page shows each site's 24-hour and 48-hour estimates, labels model-based fallbacks and displays update times when available. Disabled by default. Synthetic tests passed; two of three sites returned usable data in one isolated network check, while the interface still needs device testing. Forecasts are not an OpenAI promise or an account's own reset clock.
 - **API-equivalent estimates** — shows today's USD estimate for models with matching prices. Missing prices, breakdowns or peak/off-peak information are flagged. The tray menu can edit local USD overrides to the upstream built-in snapshot. Built-in prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Live price and exchange-rate updates are not yet available.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
@@ -69,7 +69,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.3](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.3), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.4](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.4), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 
@@ -105,7 +105,7 @@ These are targeted tests, not a claim that every upstream macOS feature is cover
 
 The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. The activity reader accesses timestamps and project-path metadata but passes only per-application counts and update times to the interface, not session IDs, paths or content. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex, Kimi and Claude account lookups default to on; MiniMax defaults to off. Switch states are saved without credentials in `%LOCALAPPDATA%\AgentMeter\preferences.json`. Custom prices and appearance are stored as `prices.json` and `appearance.json` in the same directory; a malformed price file hides estimates and shows a notice. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. If a Claude Code subscription credential file exists, the app reads its access token in memory and sends it over HTTPS to Anthropic's usage endpoint; it does not refresh or modify that token.
 
-On the main branch, third-party forecasts are off by default. Enabling them contacts `willreset.com`, `codex-reset.com` and `codexreset.org` over HTTPS without sending account credentials or local sessions. Public forecast data and history are cached in `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`; disabling the switch does not erase this cache or retract requests already sent. Alpha 3 does not contain this feature.
+Third-party forecasts are off by default. Enabling them contacts `willreset.com`, `codex-reset.com` and `codexreset.org` over HTTPS without sending account credentials or local sessions. Public forecast data and history are cached in `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`; disabling the switch does not erase this cache or retract requests already sent.
 
 User-added MiniMax keys are stored in Windows Credential Manager; `minimax-accounts.json` contains labels, regions and random IDs, not keys. When enabled, keys are passed to the local backend through standard input and sent over HTTPS to the selected MiniMax usage endpoint, never in command-line arguments or application logs. The environment-variable fallback applies only when the account-list file is absent; clearing the list in the interface retains an empty file and does not re-enable it. Disabling a source attempts to stop an ongoing account lookup; a request already sent cannot be recalled. The app does not initiate model prompts or credit redemption.
 

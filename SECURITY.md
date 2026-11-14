@@ -6,7 +6,7 @@ MiniMax 查询默认关闭。用户主动添加的密钥保存在当前 Windows 
 
 桌宠默认隐藏，素材内置且不联网；状态只读取程序已有的额度与活动汇总。项目不应接收或公开用户的账户快照、会话内容和桌宠截图中的隐私信息。
 
-主分支的第三方重置预测默认关闭；用户开启后访问 `willreset.com`、`codex-reset.com`、`codexreset.org`，不发送账户凭据或本机会话。公开预测与历史缓存于 `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`；关闭开关不会自动删除缓存，也无法撤回已发出的请求。Alpha 3 下载包不包含此功能。
+第三方重置预测默认关闭；用户开启后访问 `willreset.com`、`codex-reset.com`、`codexreset.org`，不发送账户凭据或本机会话。公开预测与历史缓存于 `%LOCALAPPDATA%\AgentMeter\reset-forecast.json`；关闭开关不会自动删除缓存，也无法撤回已发出的请求。
 
 会话文件可能包含敏感对话，即使界面只显示用量。解析后的用量会暂存在有限的进程内存中，以便加快刷新。请不要在问题反馈、测试或提交中附上真实会话、凭据、账户响应、令牌、私人路径或未脱敏的截图。Windows 和其他软件可能独立管理内存及诊断文件。
 
