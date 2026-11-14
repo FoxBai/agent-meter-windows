@@ -490,8 +490,7 @@ internal sealed class MeterWindow : Form
                     combined["other_accounts"]!["MiniMax Code"] = new JsonObject { ["status"] = "error", ["reason"] = "minimax_profiles_invalid" };
                 }
                 ApplyAccountPreferences(combined);
-                string? cardInput = new JsonObject { ["account"] = combined["account"]?.DeepClone(),
-                    ["other_accounts"] = combined["other_accounts"]?.DeepClone() ?? new JsonObject() }.ToJsonString();
+                string? cardInput = CardInput.Create(combined);
                 var cardTask = RunCollector("--cards-update", accountCancellation.Token, cardInput);
                 cardInput = null;
                 combined["history"] = new JsonObject { ["历史统计"] = new JsonObject { ["status"] = "loading", ["reason"] = "history_loading" } };

@@ -1,6 +1,7 @@
 using AgentMeter.Windows;
 using System.Drawing;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 string parent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AgentMeterPreferencesTests"));
 string directory = Path.GetFullPath(Path.Combine(parent, Guid.NewGuid().ToString("N")));
@@ -9,6 +10,15 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 
 try
 {
+    var cardSnapshot = JsonNode.Parse("""{"account":{"status":"available","private":"SECRET_MARKER","quota":{"status":"available","unused":"SECRET_MARKER","value":[{"bucket":"codex","window_minutes":300,"remaining_percent":55,"resets_at":{"epoch_seconds":1800003600,"extra":"SECRET_MARKER"},"private":"SECRET_MARKER"}]}},"other_accounts":{"MiniMax Code":[{"label":"演示账户","status":"available","key":"SECRET_MARKER","quota":{"value":[{"bucket":"5h","remaining_percent":50,"resets_at":{"epoch_seconds":1800003600}}]}}],"unknown":{"secret":"SECRET_MARKER"}}}""")!.AsObject();
+    string cardInput = CardInput.Create(cardSnapshot);
+    if (cardInput.Contains("SECRET_MARKER", StringComparison.Ordinal)) throw new InvalidOperationException("卡册输入包含多余字段");
+    using (var doc = JsonDocument.Parse(cardInput))
+    {
+        if (doc.RootElement.GetProperty("account").GetProperty("quota").GetProperty("value")[0].GetProperty("remaining_percent").GetInt32() != 55 ||
+            doc.RootElement.GetProperty("other_accounts").GetProperty("MiniMax Code")[0].GetProperty("label").GetString() != "演示账户")
+            throw new InvalidOperationException("卡册输入缺少额度或账户标识");
+    }
     Guid credentialId = Guid.NewGuid();
     try
     {
