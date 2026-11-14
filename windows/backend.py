@@ -252,7 +252,7 @@ def compact_activity(payload, now):
                 sources[name] = "not_found"
             else:
                 sources[name] = "unavailable"
-    return {"status": "partial" if incomplete else "available", "window_hours": 24, "idle_minutes": 15,
+    return {"status": "partial" if incomplete else "available", "window_hours": 24, "idle_minutes": 15, "observed_at": int(now),
             "sources": sources,
             "apps": sorted(groups.values(), key=lambda item: (-item["recent_updates"], -item["last_updated"], item["name"]))}
 
@@ -760,6 +760,7 @@ def main():
     parser.add_argument("--cards-update", action="store_true", help="使用标准输入中的额度更新本地卡册")
     parser.add_argument("--deepseek-only", action="store_true", help="使用标准输入中的密钥查询 DeepSeek 余额")
     parser.add_argument("--workbuddy-only", action="store_true", help="使用标准输入中的应用专用会话查询 WorkBuddy")
+    parser.add_argument("--activity-only", action="store_true", help="只读取本机活动汇总，不查询账户")
     parser.add_argument("--prices-dir", type=Path, help="本地价格配置目录")
     for provider in ("codex", "kimi", "claude"):
         parser.add_argument("--disable-" + provider + "-account", action="store_true")
@@ -768,6 +769,20 @@ def main():
     parser.add_argument("--home", type=Path, help="Override home for isolated testing")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    if args.activity_only:
+        if (args.workbuddy_only or args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker
+                or args.account_only or args.local_only or args.account_input or args.enable_minimax_account
+                or any(getattr(args, "disable_" + provider + "_account") for provider in ("codex", "kimi", "claude"))):
+            raise SystemExit(2)
+        try:
+            observed_at = time.time()
+            root = args.home if args.home else Path.home()
+            result = compact_activity(collect_activity(activity_config(root), now=observed_at), observed_at)
+        except Exception:
+            # 不输出异常原文或本机路径。
+            result = {"status": "error", "apps": [], "sources": {}}
+        print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        return
     if args.workbuddy_only:
         if args.deepseek_only or args.cards_update or args.forecast_only or args.history_worker or args.account_only or args.local_only or args.account_input:
             raise SystemExit(2)

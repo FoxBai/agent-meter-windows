@@ -243,6 +243,7 @@ internal sealed class MeterWindow : Form
     readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
+    readonly System.Windows.Forms.Timer activityTimer = new();
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
     readonly WorkBuddyBrowser workBuddyBrowser = new(AccountPreferences.DefaultDirectory);
@@ -250,7 +251,10 @@ internal sealed class MeterWindow : Form
     readonly bool demo;
     AccountPreferences preferences;
     CancellationTokenSource? accountCancellation;
+    CancellationTokenSource? activityCancellation;
     bool busy, refreshQueued, positioning, alertsEnabled, forecastEnabled, showAllQuotaCards;
+    bool activityBusy;
+    DateTimeOffset lastActivityAttempt = DateTimeOffset.MinValue;
     Size preferredSize;
     View view = View.Accounts;
     ApplicationFilter applicationFilter = ApplicationFilter.All;
@@ -303,6 +307,10 @@ internal sealed class MeterWindow : Form
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
         Controls.Add(content); Controls.Add(status); Controls.Add(header);
         timer.Interval = 15 * 60 * 1000; timer.Tick += async (_, _) => await RefreshData(); timer.Start();
+        activityTimer.Interval = 60 * 1000;
+        activityTimer.Tick += async (_, _) => await RefreshActivityIfNeeded();
+        if (!demo) activityTimer.Start();
+        VisibleChanged += (_, _) => { if (!Visible) activityCancellation?.Cancel(); };
     }
     public void PlaceAtTray(bool atCursor)
     {
@@ -423,7 +431,7 @@ internal sealed class MeterWindow : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); }
+        if (disposing) { shutdown.Cancel(); activityCancellation?.Cancel(); historyWorker.Dispose(); workBuddyBrowser.Dispose(); timer.Dispose(); activityTimer.Dispose(); }
         base.Dispose(disposing);
         if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
     }
@@ -465,8 +473,10 @@ internal sealed class MeterWindow : Form
     }
     void SetView(View selected)
     {
+        if (selected != View.Applications) activityCancellation?.Cancel();
         view = selected; UpdateTabs();
         if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+        if (selected == View.Applications) _ = RefreshActivityIfNeeded();
     }
 
     public bool AccountEnabled(string provider) => provider switch
@@ -562,6 +572,7 @@ internal sealed class MeterWindow : Form
     public async Task RefreshData()
     {
         if (busy) { refreshQueued = true; return; }
+        activityCancellation?.Cancel();
         busy = true; refresh.Enabled = false; status.Text = "正在刷新，本机记录较多时可能需要一些时间…";
         try
         {
@@ -656,6 +667,7 @@ internal sealed class MeterWindow : Form
                     combined["calendar_report"] = local["calendar_report"]?.DeepClone();
                     combined["local_medals"] = local["local_medals"]?.DeepClone();
                     combined["activity"] = local["activity"]?.DeepClone();
+                    lastActivityAttempt = DateTimeOffset.UtcNow;
                     combined["price_status"] = local["price_status"]?.DeepClone();
                 }
                 catch (Exception ex) when (!shutdown.IsCancellationRequested && ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException)
@@ -704,6 +716,38 @@ internal sealed class MeterWindow : Form
                 refresh.Enabled = true;
                 if (refreshQueued) { refreshQueued = false; _ = RefreshData(); }
             }
+        }
+    }
+    async Task RefreshActivityIfNeeded()
+    {
+        if (!ActivityRefreshPolicy.CanRefresh(demo, Visible, view == View.Applications, busy, activityBusy,
+            lastSnapshot is not null, lastActivityAttempt, DateTimeOffset.UtcNow)) return;
+        activityBusy = true; lastActivityAttempt = DateTimeOffset.UtcNow;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+        activityCancellation = cancellation; cancellation.CancelAfter(TimeSpan.FromSeconds(45));
+        try
+        {
+            string output = await RunCollector("--activity-only", cancellation.Token);
+            if (cancellation.IsCancellationRequested || IsDisposed || Disposing || !Visible || view != View.Applications || busy || lastSnapshot is null) return;
+            var next = JsonNode.Parse(output) as JsonObject;
+            string? state = next?["status"]?.GetValue<string>();
+            if (state is not ("available" or "partial")) { status.Text = "活动更新失败，保留上次记录"; return; }
+            var snapshot = JsonNode.Parse(lastSnapshot)!.AsObject();
+            snapshot["activity"] = next;
+            var scroll = content.AutoScrollPosition;
+            using var document = JsonDocument.Parse(snapshot.ToJsonString()); Render(document.RootElement);
+            content.PerformLayout(); content.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
+            status.Text = $"活动更新于 {DateTime.Now:HH:mm:ss} · 仅本机记录";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or System.ComponentModel.Win32Exception or OperationCanceledException or ObjectDisposedException)
+        {
+            if (!shutdown.IsCancellationRequested && !busy && !IsDisposed && !Disposing && Visible && view == View.Applications)
+                status.Text = "活动更新失败，保留上次记录";
+        }
+        finally
+        {
+            if (ReferenceEquals(activityCancellation, cancellation)) activityCancellation = null;
+            activityBusy = false;
         }
     }
     async Task<string> WorkBuddyAccountAsync(CancellationToken cancellation)

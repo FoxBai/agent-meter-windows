@@ -85,6 +85,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Activity fixture failed' }
           $activity = '{"command":"refresh"}' | & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --history-worker --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or @($activity.activity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity aggregation failed' }
+          $onlyActivity = & ./windows/dist/AgentMeter/backend/AgentMeterBackend.exe --activity-only --home "$env:RUNNER_TEMP/agentmeter-activity" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $onlyActivity.sources.Codex -ne 'available' -or @($onlyActivity.apps | Where-Object { $_.name -eq 'Codex' -and $_.sessions -eq 1 }).Count -ne 1) { throw 'Activity-only refresh failed' }
+          if (($onlyActivity | ConvertTo-Json -Depth 10 -Compress) -match 'synthetic-path|synthetic-id|synthetic-model') { throw 'Activity-only privacy projection failed' }
           if (@($activity.local_medals.medals | Where-Object { $_.id -eq 'day_1' -and $_.earned }).Count -ne 1) { throw 'Medal projection failed' }
           $forecastFixture = @'
           import json, sys, time

@@ -537,6 +537,30 @@ class WindowsBackendTests(unittest.TestCase):
         self.assertEqual(malformed['status'], 'partial')
         self.assertEqual(malformed['apps'], [])
 
+    def test_activity_only_uses_isolated_home_and_rejects_account_mode(self):
+        now = int(time.time())
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root) / '.codex'
+            folder.mkdir(parents=True)
+            db = sqlite3.connect(folder / 'state_5.sqlite')
+            try:
+                db.execute('CREATE TABLE threads (id TEXT, cwd TEXT, created_at INTEGER, updated_at INTEGER, model TEXT)')
+                db.execute('INSERT INTO threads VALUES (?,?,?,?,?)', ('private-session', 'C:/private-project', now - 60, now - 20, 'private-model'))
+                db.commit()
+            finally:
+                db.close()
+            env = dict(os.environ, CODEX_HOME='', CLAUDE_CONFIG_DIR='', DSH_HOME='', KIMI_CODE_HOME='', XDG_DATA_HOME='', OPENCODE_DB='')
+            command = [sys.executable, '-m', 'windows.backend', '--activity-only', '--home', root]
+            run = subprocess.run(command, env=env, capture_output=True, text=True, encoding='utf-8', timeout=30, check=True)
+            result = json.loads(run.stdout)
+            self.assertEqual(result['sources']['Codex'], 'available')
+            self.assertEqual(next(row for row in result['apps'] if row['name'] == 'Codex')['sessions'], 1)
+            self.assertNotIn('private-', run.stdout)
+            self.assertNotIn('account', result)
+            self.assertNotIn('history', result)
+            conflict = subprocess.run(command + ['--account-only'], env=env, capture_output=True, timeout=30)
+            self.assertEqual(conflict.returncode, 2)
+
     def test_estimated_cost_uses_known_groups_and_marks_unknown_models(self):
         priced = {'model': 'gpt-5.3-codex', 'app': 'codex', 'fresh_input': 1000000,
                   'cache_read': 0, 'cache_write': 0, 'output': 0, 'reasoning': 0, 'total_tokens': 1000000}

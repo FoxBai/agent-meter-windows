@@ -10,6 +10,16 @@ if (!directory.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison
 
 try
 {
+    var clock = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+    if (!ActivityRefreshPolicy.CanRefresh(false, true, true, false, false, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, false, true, false, false, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, true, false, false, false, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, true, true, true, false, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, true, true, false, true, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(true, true, true, false, false, true, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, true, true, false, false, false, clock.AddSeconds(-60), clock) ||
+        ActivityRefreshPolicy.CanRefresh(false, true, true, false, false, true, clock.AddSeconds(-59), clock))
+        throw new InvalidOperationException("本机活动刷新条件不正确");
     var namedProvider = ProviderStyle.For("MINIMAX CODE · 家庭账户");
     if (namedProvider.DisplayName != "MiniMax Code · 家庭账户" || namedProvider.Initial != "M" ||
         ProviderStyle.For("unknown service").DisplayName != "unknown service" ||
