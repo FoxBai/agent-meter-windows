@@ -20,6 +20,31 @@ try
     AccountPreferences.Enabled.Save(directory);
     if (AccountPreferences.Load(directory) != AccountPreferences.Enabled)
         throw new InvalidOperationException("账户开关未正确覆盖");
+    if (VisualThemes.All.Count != 7 || VisualThemes.All.Select(t => t.Id).Distinct().Count() != 7)
+        throw new InvalidOperationException("界面风格列表不完整");
+    VisualThemes.Save(directory, VisualThemes.Find("porcelain"));
+    if (VisualThemes.Load(directory).Id != "porcelain") throw new InvalidOperationException("界面风格未正确保存");
+    File.WriteAllText(Path.Combine(directory, "appearance.json"), "not-json");
+    if (VisualThemes.Load(directory).Id != "aurora") throw new InvalidOperationException("损坏的外观设置应回退默认风格");
+    static double Luminance(Color color)
+    {
+        static double Linear(int channel) { double v = channel / 255.0; return v <= 0.04045 ? v / 12.92 : Math.Pow((v + 0.055) / 1.055, 2.4); }
+        return 0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
+    }
+    static double Contrast(Color a, Color b)
+    {
+        double x = Luminance(a), y = Luminance(b);
+        return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
+    }
+    foreach (var theme in VisualThemes.All)
+    {
+        foreach (var background in new[] { theme.Background, theme.Card, theme.CardEnd })
+            if (Contrast(theme.Primary, background) < 4.5 || Contrast(theme.Secondary, background) < 4.5)
+                throw new InvalidOperationException($"{theme.Name} 的文字对比度不足");
+        if (Contrast(Color.White, theme.Selected) < 4.5) throw new InvalidOperationException($"{theme.Name} 的选中标签对比度不足");
+        if (Contrast(theme.Accent, theme.Background) < 4.5 || Contrast(theme.Accent, theme.Card) < 4.5)
+            throw new InvalidOperationException($"{theme.Name} 的强调文字对比度不足");
+    }
     var screen = new Rectangle(0, 0, 1920, 1080);
     var panel = new Size(500, 700);
     void Position(Rectangle bounds, Rectangle work, Point cursor, Point expected)
@@ -39,7 +64,7 @@ try
         throw new InvalidOperationException("面板应适应较小工作区");
     if (PanelPlacement.Fit(new Size(500, 760), new Rectangle(0, 0, 1920, 1040)) != new Size(500, 760))
         throw new InvalidOperationException("足够大的工作区不应改变面板尺寸");
-    Console.WriteLine("账户开关与面板位置检查通过");
+    Console.WriteLine("账户开关、面板位置和主题对比度检查通过");
 }
 finally
 {

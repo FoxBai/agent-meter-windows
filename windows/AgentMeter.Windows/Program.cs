@@ -42,6 +42,18 @@ internal sealed class MeterContext : ApplicationContext
             }
             menu.Items.Add(accounts);
         }
+        var appearance = new ToolStripMenuItem("界面风格");
+        foreach (var themeOption in VisualThemes.All)
+        {
+            var item = new ToolStripMenuItem(themeOption.Name) { Checked = window.ThemeId == themeOption.Id };
+            item.Click += (_, _) =>
+            {
+                if (!window.SetTheme(themeOption)) return;
+                foreach (ToolStripMenuItem other in appearance.DropDownItems) other.Checked = other == item;
+            };
+            appearance.DropDownItems.Add(item);
+        }
+        menu.Items.Add(appearance);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Text = "Agent Meter · AI 用量", Icon = icon, ContextMenuStrip = menu, Visible = true };
@@ -61,10 +73,17 @@ internal sealed class MeterContext : ApplicationContext
 
 internal sealed class MeterWindow : Form
 {
-    static readonly Color Background = Color.FromArgb(15, 19, 30), Card = Color.FromArgb(26, 32, 47), Muted = Color.FromArgb(158, 170, 190), Accent = Color.FromArgb(117, 220, 194);
+    VisualTheme theme;
+    Color Background => theme.Background;
+    Color Card => theme.Card;
+    Color Muted => theme.Secondary;
+    Color Accent => theme.Accent;
+    Color Primary => theme.Primary;
     readonly FlowLayoutPanel content = new();
     readonly Label status = new();
     readonly Button refresh = new();
+    readonly Panel header = new();
+    readonly Label title = new(), subtitle = new();
     readonly Button accountTab = new(), usageTab = new();
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
@@ -81,21 +100,22 @@ internal sealed class MeterWindow : Form
     public MeterWindow(bool demo, bool windowed)
     {
         this.demo = demo; preferences = demo ? AccountPreferences.Enabled : AccountPreferences.Load(AccountPreferences.DefaultDirectory);
-        Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
+        theme = demo ? VisualThemes.Find("aurora") : VisualThemes.Load(AccountPreferences.DefaultDirectory);
+        Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Primary;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
         preferredSize = Size;
         Resize += (_, _) => { if (!positioning && WindowState == FormWindowState.Normal) preferredSize = Size; };
-        var header = new Panel { Dock = DockStyle.Top, Height = 270 };
-        var title = new Label { Text = "◈  Agent 用量", Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.FromArgb(216, 207, 255) };
-        var subtitle = new Label { Text = "账户额度与本机消耗", AutoSize = true, Location = new Point(25, 55), ForeColor = Muted };
+        header.Dock = DockStyle.Top; header.Height = 270; header.BackColor = Background;
+        title.Text = "◈  Agent 用量"; title.Font = new Font(Font.FontFamily, 17F, FontStyle.Bold); title.AutoSize = true; title.Location = new Point(22, 16); title.ForeColor = Accent;
+        subtitle.Text = "账户额度与本机消耗"; subtitle.AutoSize = true; subtitle.Location = new Point(25, 55); subtitle.ForeColor = Muted;
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
-        refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = Color.FromArgb(76, 96, 111); refresh.ForeColor = Accent; refresh.BackColor = Card;
+        refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = theme.Border; refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
         header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); };
         foreach (var tab in new[] { accountTab, usageTab })
         {
-            tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Color.White;
+            tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
             tab.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold); tab.Size = new Size(132, 36);
         }
         gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 120);
@@ -106,7 +126,7 @@ internal sealed class MeterWindow : Form
         usageTab.Text = "本机消耗"; usageTab.Location = new Point(160, 217);
         accountTab.Click += (_, _) => SetView(true); usageTab.Click += (_, _) => SetView(false);
         header.Controls.AddRange([accountTab, usageTab]); UpdateTabs();
-        status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.Text = "正在准备…";
+        status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.BackColor = Background; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
         Controls.Add(content); Controls.Add(status); Controls.Add(header);
@@ -127,7 +147,25 @@ internal sealed class MeterWindow : Form
         finally { positioning = false; }
     }
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
-    void UpdateTabs() { accountTab.BackColor = showAccounts ? Color.FromArgb(115, 76, 219) : Card; usageTab.BackColor = showAccounts ? Card : Color.FromArgb(115, 76, 219); }
+    void UpdateTabs()
+    {
+        accountTab.BackColor = showAccounts ? theme.Selected : Card; accountTab.ForeColor = showAccounts ? Color.White : Primary;
+        usageTab.BackColor = showAccounts ? Card : theme.Selected; usageTab.ForeColor = showAccounts ? Primary : Color.White;
+    }
+    public string ThemeId => theme.Id;
+    public bool SetTheme(VisualTheme value)
+    {
+        try { if (!demo) VisualThemes.Save(AccountPreferences.DefaultDirectory, value); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { status.Text = "无法保存界面风格，请检查设置目录权限"; return false; }
+        theme = value;
+        BackColor = header.BackColor = content.BackColor = gauges.BackColor = status.BackColor = Background;
+        ForeColor = Primary; title.ForeColor = Accent; subtitle.ForeColor = status.ForeColor = Muted;
+        refresh.ForeColor = Accent; refresh.BackColor = Card; refresh.FlatAppearance.BorderColor = theme.Border;
+        UpdateTabs();
+        if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+        return true;
+    }
     void SetView(bool account)
     {
         showAccounts = account; UpdateTabs();
@@ -419,7 +457,7 @@ internal sealed class MeterWindow : Form
             var unit = GetString(window, "unit", "");
             string label = minutes == 300 || bucket == "limit5h" ? "5 小时" : minutes == 10080 || bucket == "limit7d" ? "7 天" :
                 duration.HasValue ? $"{duration:0.#}{(unit == "hour" ? "小时" : unit == "week" ? "周" : unit)}" : GetString(row, "window", bucket);
-            gauges.Controls.Add(new QuotaGauge(provider, label, Math.Clamp(remaining.Value, 0, 100)));
+            gauges.Controls.Add(new QuotaGauge(provider, label, Math.Clamp(remaining.Value, 0, 100), theme));
             return;
         }
     }
@@ -452,7 +490,7 @@ internal sealed class MeterWindow : Form
     void AddHeading(string title, string subtitle)
     {
         var box = new Panel { Height = 60, Margin = new Padding(0, 3, 0, 1), BackColor = Background };
-        box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Color.White });
+        box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Primary });
         box.Controls.Add(new Label { Text = subtitle, AutoSize = true, Location = new Point(3, 32), ForeColor = Muted }); content.Controls.Add(box);
     }
     void AddUsageSummary(JsonElement history)
@@ -475,22 +513,22 @@ internal sealed class MeterWindow : Form
             for (int i = 0; i < parts.Length; i++) parts[i] += values[i];
         }
         if (sources == 0) return;
-        var box = new RoundedCard { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme) { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new Label { Text = "今日 Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
-        box.Controls.Add(new Label { Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
+        box.Controls.Add(new Label { Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
         box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
         if (complete && total > 0)
         {
-            var bar = new BreakdownBar(parts) { Location = new Point(16, 116), Height = 9 };
+            var bar = new BreakdownBar(parts, theme) { Location = new Point(16, 116), Height = 9 };
             box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(bar);
             var legend = new FlowLayoutPanel { Location = new Point(16, 137), Height = 48, WrapContents = true };
             string[] labels = ["输入", "输出", "缓存读取", "缓存写入", "未拆分"];
             for (int i = 0; i < labels.Length; i++)
-                legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.Colors[i], Margin = new Padding(0, 0, 8, 0) });
+                legend.Controls.Add(new Label { Text = "● " + labels[i], AutoSize = true, Font = new Font(Font.FontFamily, 8F), ForeColor = BreakdownBar.ColorsFor(theme)[i], Margin = new Padding(0, 0, 8, 0) });
             box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
         }
         else box.Controls.Add(new Label { Text = "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
-        content.Controls.Add(box);
+        StyleCard(box); content.Controls.Add(box);
     }
     void AddDailyTrend(JsonElement trend)
     {
@@ -504,28 +542,33 @@ internal sealed class MeterWindow : Form
             points.Add((date, tokens.Value));
         }
         if (points.Count != 7) return;
-        var box = new RoundedCard { Height = 218, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
-        box.Controls.Add(new Label { Text = "最近 7 个自然日", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(15, 10) });
+        var box = new RoundedCard(theme) { Height = 218, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = "最近 7 个自然日", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Primary, Location = new Point(15, 10) });
         bool incomplete = GetValue(trend, "incomplete").ValueKind == JsonValueKind.True;
         box.Controls.Add(new Label { Text = incomplete ? "北京时间 · 部分记录不完整" : "北京时间 · 本机账本相加", AutoSize = true, ForeColor = Muted, Location = new Point(16, 38) });
-        var chart = new DailyChart(points) { Location = new Point(14, 70), Height = 132 };
+        var chart = new DailyChart(points, theme) { Location = new Point(14, 70), Height = 132 };
         box.Resize += (_, _) => chart.Width = Math.Max(0, box.ClientSize.Width - 28); box.Controls.Add(chart);
-        content.Controls.Add(box);
+        StyleCard(box); content.Controls.Add(box);
     }
     void AddCard(string name, string value, string detail, double? progress, string? extra = null)
     {
-        var box = new RoundedCard { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var box = new RoundedCard(theme) { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
-        box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
+        box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Primary, Location = new Point(14, 31) });
         box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 84 : 67) });
         if (extra is not null) box.Controls.Add(new Label { Text = extra, AutoSize = true, ForeColor = Muted, Location = new Point(16, 91) });
         if (progress.HasValue)
         {
-            var bar = new MeterBar { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 70), Height = 5 };
+            var bar = new MeterBar(theme) { Value = Math.Clamp(progress.Value, 0, 100), Location = new Point(16, 70), Height = 5 };
             box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32);
             box.Controls.Add(bar);
         }
-        content.Controls.Add(box);
+        StyleCard(box); content.Controls.Add(box);
+    }
+    static void StyleCard(RoundedCard box)
+    {
+        foreach (Control child in box.Controls)
+            if (child is Label) child.BackColor = Color.Transparent;
     }
     void AddModelRanking(JsonElement history)
     {
@@ -567,6 +610,8 @@ internal sealed class MeterWindow : Form
 }
 internal sealed class RoundedCard : Panel
 {
+    readonly VisualTheme theme;
+    public RoundedCard(VisualTheme theme) { this.theme = theme; DoubleBuffered = true; }
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
@@ -578,26 +623,40 @@ internal sealed class RoundedCard : Panel
         Region?.Dispose(); Region = new Region(path);
         Invalidate();
     }
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        if (ClientRectangle.Width <= 0 || ClientRectangle.Height <= 0) return;
+        using var fill = new System.Drawing.Drawing2D.LinearGradientBrush(ClientRectangle, theme.Card, theme.CardEnd, 90F);
+        e.Graphics.FillRectangle(fill, ClientRectangle);
+    }
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        if (theme.Minimal || Width < 22 || Height < 22) return;
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using var border = new Pen(Color.FromArgb(65, 74, 100));
-        e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        using var border = new Pen(theme.Border);
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        int r = 20, w = Width - 1, h = Height - 1;
+        path.AddArc(0, 0, r, r, 180, 90); path.AddArc(w - r, 0, r, r, 270, 90);
+        path.AddArc(w - r, h - r, r, r, 0, 90); path.AddArc(0, h - r, r, r, 90, 90); path.CloseFigure();
+        e.Graphics.DrawPath(border, path);
     }
 }
 internal sealed class MeterBar : Control
 {
+    readonly VisualTheme theme;
+    public MeterBar(VisualTheme theme) { this.theme = theme; }
     public double Value { get; set; }
-    protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(Color.FromArgb(53, 67, 79)); using var brush = new SolidBrush(Value < 20 ? Color.FromArgb(244, 136, 116) : Color.FromArgb(117, 220, 194)); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
+    protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(theme.Border); using var brush = new SolidBrush(Value < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(244, 136, 116)) : theme.Accent); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
 }
 internal sealed class QuotaGauge : Control
 {
     readonly string provider, period;
     readonly double remaining;
-    public QuotaGauge(string provider, string period, double remaining)
+    readonly VisualTheme theme;
+    public QuotaGauge(string provider, string period, double remaining, VisualTheme theme)
     {
-        this.provider = provider; this.period = period; this.remaining = remaining;
+        this.provider = provider; this.period = period; this.remaining = remaining; this.theme = theme;
         Size = new Size(110, 110); Margin = new Padding(0, 0, 9, 0);
         AccessibleRole = AccessibleRole.Graphic; AccessibleName = $"{provider} {period}，剩余 {remaining:0.#}%";
         DoubleBuffered = true;
@@ -606,22 +665,23 @@ internal sealed class QuotaGauge : Control
     {
         base.OnPaint(e); e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         var ring = new Rectangle(25, 4, 52, 52);
-        using var track = new Pen(Color.FromArgb(48, 52, 68), 7);
-        using var fill = new Pen(remaining < 20 ? Color.FromArgb(255, 98, 135) : remaining < 50 ? Color.FromArgb(255, 169, 58) : Color.FromArgb(61, 218, 175), 7);
+        using var track = new Pen(theme.Border, 7);
+        using var fill = new Pen(remaining < 20 ? (theme.Light ? Color.FromArgb(181, 51, 71) : Color.FromArgb(255, 98, 135)) : remaining < 50 ? (theme.Light ? Color.FromArgb(160, 96, 0) : Color.FromArgb(255, 169, 58)) : theme.Accent, 7);
         fill.StartCap = fill.EndCap = System.Drawing.Drawing2D.LineCap.Round;
         e.Graphics.DrawArc(track, ring, -90, 359); if (remaining > 0) e.Graphics.DrawArc(fill, ring, -90, (float)(3.59 * remaining));
         using var valueFont = new Font(Font.FontFamily, 11F, FontStyle.Bold);
-        TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), Color.White, TextFormatFlags.HorizontalCenter);
-        TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, theme.Primary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), theme.Primary, TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), theme.Secondary, TextFormatFlags.HorizontalCenter);
     }
 }
 internal sealed class DailyChart : Control
 {
     readonly IReadOnlyList<(string Date, double Tokens)> points;
-    public DailyChart(IReadOnlyList<(string Date, double Tokens)> points)
+    readonly VisualTheme theme;
+    public DailyChart(IReadOnlyList<(string Date, double Tokens)> points, VisualTheme theme)
     {
-        this.points = points; DoubleBuffered = true; AccessibleRole = AccessibleRole.Graphic;
+        this.points = points; this.theme = theme; DoubleBuffered = true; AccessibleRole = AccessibleRole.Graphic;
         AccessibleName = "最近七个自然日 Token：" + string.Join("，", points.Select(p => $"{p.Date} {p.Tokens:0}"));
     }
     protected override void OnPaint(PaintEventArgs e)
@@ -630,11 +690,11 @@ internal sealed class DailyChart : Control
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         double maximum = Math.Max(1, points.Max(p => p.Tokens));
         int slot = Math.Max(1, Width / points.Count), baseline = Height - 28, top = 22;
-        using var guide = new Pen(Color.FromArgb(65, 74, 100));
-        using var fill = new SolidBrush(Color.FromArgb(117, 220, 194));
+        using var guide = new Pen(theme.Border);
+        using var fill = new SolidBrush(theme.Accent);
         using var small = new Font(Font.FontFamily, 8F);
         string peak = maximum >= 1_000_000 ? $"{maximum / 1_000_000:0.##}M" : maximum >= 1_000 ? $"{maximum / 1_000:0.##}K" : $"{(points.Max(p => p.Tokens)):0}";
-        TextRenderer.DrawText(e.Graphics, "单日最高 " + peak, small, new Point(0, 0), Color.FromArgb(158, 170, 190));
+        TextRenderer.DrawText(e.Graphics, "单日最高 " + peak, small, new Point(0, 0), theme.Secondary);
         e.Graphics.DrawLine(guide, 0, baseline, Width, baseline);
         for (int i = 0; i < points.Count; i++)
         {
@@ -643,15 +703,18 @@ internal sealed class DailyChart : Control
             if (barHeight > 0) e.Graphics.FillRectangle(fill, x, baseline - barHeight, barWidth, barHeight);
             var labelArea = new Rectangle(i * slot, baseline + 5, slot, 20);
             TextRenderer.DrawText(e.Graphics, point.Date[5..].Replace('-', '/'), small, labelArea,
-                Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                theme.Secondary, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
     }
 }
 internal sealed class BreakdownBar : Control
 {
     readonly double[] values;
-    internal static readonly Color[] Colors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
-    public BreakdownBar(double[] values) { this.values = values; DoubleBuffered = true; AccessibleName = "今日用量构成：输入、输出、缓存读取、缓存写入和未拆分"; }
+    readonly Color[] colors;
+    static readonly Color[] DarkColors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
+    static readonly Color[] LightColors = [Color.FromArgb(35, 94, 180), Color.FromArgb(105, 55, 160), Color.FromArgb(15, 111, 97), Color.FromArgb(149, 84, 0), Color.FromArgb(89, 95, 112)];
+    public static Color[] ColorsFor(VisualTheme theme) => theme.Light ? LightColors : DarkColors;
+    public BreakdownBar(double[] values, VisualTheme theme) { this.values = values; colors = ColorsFor(theme); DoubleBuffered = true; AccessibleName = "今日用量构成：输入、输出、缓存读取、缓存写入和未拆分"; }
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e); double total = values.Sum(), start = 0;
@@ -659,7 +722,7 @@ internal sealed class BreakdownBar : Control
         for (int i = 0; i < values.Length; i++)
         {
             float left = (float)(Width * start / total), right = (float)(Width * (start + values[i]) / total);
-            using var brush = new SolidBrush(Colors[i]); e.Graphics.FillRectangle(brush, left, 0, Math.Max(0, right - left), Height); start += values[i];
+            using var brush = new SolidBrush(colors[i]); e.Graphics.FillRectangle(brush, left, 0, Math.Max(0, right - left), Height); start += values[i];
         }
     }
 }
