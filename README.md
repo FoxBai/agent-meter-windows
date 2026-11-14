@@ -2,63 +2,64 @@
 
 # Agent Meter for Windows
 
-**AI coding usage, one glance away.**
+**AI 编程用量，点开托盘就能看。**
 
-A Windows system-tray companion for account limits and local agent usage, built on [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter).
+基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 开发的 Windows 系统托盘工具，用于查看账户额度和本机 Agent 用量。
 
-[简体中文](README.zh-CN.md) · [Getting started](#getting-started) · [Privacy](#privacy-and-data) · [Contributing](#contributing)
+[English](README.en.md) · [开始使用](#开始使用) · [隐私与数据](#隐私与数据) · [参与贡献](#参与贡献)
 
-[![Windows build](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Windows 构建](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml/badge.svg)](https://github.com/FoxBai/agent-meter-windows/actions/workflows/windows-port.yml) [![许可证：MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
 
-> **Early Windows port.** The app is under active development. The Windows release does not yet contain every provider, feature or interface from the original macOS project.
+> **Windows 早期开发版。** 当前版本尚未覆盖原 macOS 项目的全部数据源和功能。
 
-![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
+![Agent Meter 面板，图中为虚构演示数据](windows/assets/screenshot.png)
 
-The screenshot uses fictional demo data. Actual availability depends on the agent, account, local files and version.
+截图为虚构演示数据。实际可显示的字段取决于工具、账户、本机记录和版本。
 
-## What it does
+## 功能
 
-- **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
-- **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
-- **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
-- **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
+- **系统托盘面板**：左键托盘图标显示或隐藏面板，右键可打开、刷新或退出。关闭面板后程序仍留在托盘。
+- **Codex 账户额度**：在账户服务提供数据时，展示额度窗口、重置时间、积分及重置卡。未提供的字段不会按零显示。
+- **Kimi Code 账户额度**：尝试连接已经运行的本机 Kimi 服务，不主动启动服务；当前仅通过模拟服务验证，真实 Windows 账户尚待验证。
+- **本机用量**：读取支持的会话账本，展示今日、近 7 天、近 30 天和累计 Token。Qoder CN 本机积分消耗单独展示，不计入 Token。账户额度和本机历史分别展示，统计范围不同。
+- **后台刷新**：账户数据可先显示，历史记录继续在后台扫描。支持手动刷新和每 15 分钟自动刷新；程序运行期间会在内存中缓存已解析的用量，变化的文件会重新读取。
 
-## Data sources
+## 数据来源
 
-The table describes the current `main` branch. The published alpha.1 package predates the newly added Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers and the 7/30-day views.
+下表描述当前 `main` 分支。已发布的 alpha.1 安装包早于新增的 Kimi、OpenCode、MiniMax Code、MiMo Code、DevECo、Qoder CN 读取器及 7/30 天视图。
 
-| Source | Account quota | Local token history |
+| 来源 | 账户额度 | 本机 Token 历史 |
 | --- | --- | --- |
-| Codex | Quota and reset time; credits and reset cards when available | Codex sessions and archives |
-| Claude Code | Not yet | Local project sessions |
-| Gemini CLI | Not yet | Local chat sessions |
-| WorkBuddy | Not yet | Local project sessions |
-| ZCode | Not yet | Local CLI usage database |
-| DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
-| Kimi Code / legacy Kimi CLI | Not yet | Local session logs |
-| OpenCode | Not yet | Local v1 message database; v2 records are flagged as incomplete |
-| MiniMax Code, MiMo Code, DevECo | Not yet | Local usage databases |
-| Qoder CN | Not yet | Local credits consumed, not token usage or account balance |
+| Codex | 额度和重置时间；可用时显示积分、重置卡 | 本机会话及归档 |
+| Claude Code | 暂不支持 | 本地项目会话 |
+| Gemini CLI | 暂不支持 | 本地聊天会话 |
+| WorkBuddy | 暂不支持 | 本地项目会话 |
+| ZCode | 暂不支持 | 本地 CLI 用量数据库 |
+| DeepSeek Harness | 暂不支持 | 本机会话日志，包含受支持的压缩日志 |
+| Kimi Code / 旧版 Kimi CLI | Kimi Code 已运行本地服务（模拟验证） | 本机会话日志 |
+| OpenCode | 暂不支持 | 本地 v1 消息数据库；检测到 v2 记录时提示统计不完整 |
+| MiniMax Code、MiMo Code、DevECo | 暂不支持 | 本机用量数据库 |
+| Qoder CN | 暂不支持 | 本机积分消耗，不是 Token 或账户余额 |
 
-The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers have synthetic Windows tests; they have not been validated against real installations on this Windows machine. OpenCode's v2 messages are not yet counted. The application reports only data it can read. A provider or account may omit fields or use an unsupported format. Local history is limited to records on this computer; it is not necessarily the same as account-wide usage, invoices, or remaining plan quota. Period boundaries currently use **Asia/Shanghai**. Credits from different services are not combined.
+新增的 Kimi、OpenCode、MiniMax Code、MiMo Code、DevECo 和 Qoder CN 读取器已通过 Windows 模拟数据测试，但尚未在这台 Windows 电脑上用对应真实安装验证；OpenCode v2 消息暂不计入。工具只展示实际读取到的数据。不同账户可能不提供某些字段，应用版本变化也可能影响读取。本机历史只覆盖当前电脑可见的记录，不等于账户总用量、账单或套餐剩余额度。目前“今日”等统计周期按**北京时间（Asia/Shanghai）**划分，不会把不同服务的积分相加。
 
-## Getting started
+## 开始使用
 
-### Requirements
+### 环境要求
 
-- Windows x64, with the agents you want to inspect installed and configured. This port has been exercised on Windows build 26300; other versions and Windows ARM64 still need validation.
-- To build: Python 3.10 and the .NET 8 SDK. The resulting self-contained bundle includes its Python backend and .NET runtime.
-- For Codex account quota, a working, signed-in `codex.exe` must be on `PATH` or in the Codex Desktop installation directory. No account login is performed by Agent Meter.
+- Windows x64，并在本机安装、配置需要查看的 Agent。本项目已在 Windows build 26300 上进行开发验证；其他系统版本和 Windows ARM64 仍需验证。
+- 从源码构建需要 Python 3.10 和 .NET 8 SDK。构建出的独立目录包含 Python 后端和 .NET 运行时。
+- 查看 Codex 账户额度需要可用且已登录的 `codex.exe`，其位置应在 `PATH` 中或 Codex Desktop 安装目录内。Agent Meter 不负责登录账户。
 
-### Download the preview
+### 下载预览版
 
-Download [Windows v0.1.0-alpha.1](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle and a separate clean physical installation have not yet been verified.
+前往 [Windows v0.1.0-alpha.1 发布页](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1)，下载 `AgentMeter-Windows-x64.zip`，解压后运行其中的 `AgentMeter.Windows.exe`。便携包已包含运行环境。当前预览版尚未进行代码签名，发布页同时提供 SHA-256 校验文件；完整托盘交互和另一台全新 Windows 实机尚未验证。
 
-### Build from source
+### 从源码构建
 
-In PowerShell from the repository root:
+在项目根目录打开 PowerShell：
 
 ```powershell
 py -3.10 -m venv .venv-win
@@ -67,47 +68,47 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1
 .\windows\dist\AgentMeter\AgentMeter.Windows.exe
 ```
 
-Keep the complete `AgentMeter` output folder together. Find the icon in the Windows notification area; Windows may place it under the hidden-icons arrow. The first local scan can take time when there are many sessions. Later refreshes reuse the in-memory cache, subject to its size limit and source changes.
+请保留完整的 `AgentMeter` 输出目录。启动后在 Windows 通知区域查找图标；如果没有直接看到，可展开隐藏的图标。首次需要扫描已有的本机记录，记录较多时可能耗时较长；程序继续运行期间，后续刷新可以复用内存缓存，但文件变化和缓存淘汰仍会影响速度。
 
-For a synthetic preview without reading accounts or local history:
+如果只想查看界面，可运行不读取账户和本机历史的演示模式：
 
 ```powershell
 .\windows\dist\AgentMeter\AgentMeter.Windows.exe --demo
 ```
 
-`--window` opens a normal taskbar window for troubleshooting with real data. It is not required for ordinary tray use. To stop the app, right-click the tray icon and choose **退出** (Quit).
+排查时可使用 `--window`，以普通任务栏窗口显示真实数据；日常使用无需添加参数。退出程序请右键托盘图标，选择**退出**。
 
-### Tests
+### 运行测试
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows\test.ps1
 dotnet build windows\AgentMeter.Windows -c Release
 ```
 
-These are targeted tests, not a claim that every upstream macOS feature is covered on Windows. Some upstream suites require additional tools or contain platform-specific assumptions.
+上述命令覆盖当前 Windows 适配的重点路径，不代表原项目全部 macOS 功能均已在 Windows 验证。部分上游测试还需要额外工具，或包含针对其他系统的假设。
 
-## Privacy and data
+## 隐私与数据
 
-The Windows adapter reads local session files and usage databases; it derives usage metrics rather than displaying conversation text. Parsed usage is held in a bounded in-memory cache and is discarded when the app exits. The Windows interface does not upload this history or require an Agent Meter account. Codex account refresh starts the locally installed Codex app-server, which uses the existing Codex login and may contact the provider. The app does not ask you to paste credentials and does not initiate model prompts or credit redemption.
+Windows 适配层读取本机会话文件和用量数据库，提取用量指标，不在面板中展示对话内容。解析后的用量只缓存在有限的进程内存中，退出时清除。Windows 界面不上传这些历史记录，也不要求注册 Agent Meter 账户。刷新 Codex 账户数据时，程序会启动本机已安装的 Codex app-server，使用现有登录状态，Codex 可能访问服务提供方。程序不会要求粘贴凭据，也不会主动发送模型提示词或兑换积分。
 
-This Windows port is independent of the optional reward-claiming features in the upstream macOS application; those controls are not exposed by the Windows interface. Check the code and the provider's own policies if your environment has restrictions on local session access.
+原 macOS 项目的可选积分领取功能没有在 Windows 界面开放。如果工作环境对本机会话访问有要求，请自行检查代码和相应服务的使用规则。
 
-## Troubleshooting
+## 常见问题
 
-- **No tray icon:** open the hidden-icons menu in the notification area. Start with `--window` to inspect the panel.
-- **No Codex quota:** confirm `codex.exe` is available and signed in, then refresh. A network or service failure can also make account data unavailable.
-- **No local history:** run the agent on this Windows account and check the corresponding local history exists. `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `DSH_HOME`, `KIMI_CODE_HOME`, `XDG_DATA_HOME` and `OPENCODE_DB` can override the corresponding default paths.
-- **First refresh is slow:** the first scan parses existing files. Later refreshes are generally faster while the app remains running; changing files, cache eviction or very large histories can still take time.
-- **Values differ from a provider dashboard:** local history and account-wide reporting have different scope and timing. A missing or unsupported field remains unavailable rather than being assumed to be zero.
+- **找不到托盘图标**：展开通知区域的隐藏图标；也可以使用 `--window` 检查面板。
+- **没有 Codex 额度**：确认 `codex.exe` 可用且已登录，再刷新；网络或服务异常也可能导致暂时不可用。
+- **没有本机历史**：确认当前 Windows 用户已使用过相应 Agent，且本机记录仍存在。可通过 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`DSH_HOME`、`KIMI_CODE_HOME`、`XDG_DATA_HOME` 和 `OPENCODE_DB` 覆盖对应默认路径。
+- **首次刷新较慢**：首次需要解析已有文件，程序保持运行时后续刷新通常较快；文件变化、缓存淘汰或记录过多仍可能影响速度。
+- **和官方页面数字不同**：本机历史与账户统计的范围、更新时间不同；缺失或无法识别的字段不会被假定为零。
 
-## Development and attribution
+## 开发与致谢
 
-The native Windows interface and adapter are in [`windows/`](windows/). The Python collectors in [`agent_meter/`](agent_meter/) are adapted from [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter), baseline commit [`ac547d0`](https://github.com/Gary23333/agent-meter/commit/ac547d0dd56031cad70c3f0adf6266ce96a69bf9). The original copyright notice and MIT license are retained in [LICENSE](LICENSE); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for upstream notices. This is an independent port, not an official release of the original project or of any agent provider.
+Windows 原生界面和适配层位于 [`windows/`](windows/)。[`agent_meter/`](agent_meter/) 中的 Python 采集器基于 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 修改，上游基准提交为 [`ac547d0`](https://github.com/Gary23333/agent-meter/commit/ac547d0dd56031cad70c3f0adf6266ce96a69bf9)。原作者版权声明和 MIT 许可保留在 [LICENSE](LICENSE)，上游第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目是独立移植版，并非原项目或任何 Agent 服务商的官方发行版。
 
-## Contributing
+## 参与贡献
 
-Issues and contributions are welcome. Please report Windows version, app version, the source affected, expected behavior and sanitized steps to reproduce. Never include credentials, session transcripts or private account data in an issue. Run the targeted tests above and describe any platform or provider you could not verify.
+欢迎提交问题和改进。反馈时请说明 Windows 版本、应用版本、涉及的数据源、预期结果和经过脱敏的复现步骤；不要在公开问题中附上凭据、对话记录或私密账户信息。提交改动前请运行上述针对性测试，并说明尚未验证的平台或数据源。
 
-## License
+## 许可证
 
-[MIT](LICENSE), with original attribution to Gary23333. Third-party components retain their own licenses.
+[MIT](LICENSE)，保留原作者 Gary23333 的版权声明；第三方组件遵循各自许可。

@@ -1,13 +1,13 @@
-# Security and privacy
+# 安全与隐私
 
-The current Windows port reads local usage records and may start the installed Codex app-server to query account limits. The latter may make network requests using the user's existing Codex login. The Windows interface does not expose the upstream macOS reward-claiming or web-login features.
+Windows 版读取本机用量记录；查询 Codex 账户额度时会启动本机已安装的 Codex app-server，使用既有登录状态并可能访问服务提供方。Kimi 额度读取仅连接已运行的本机服务。当前 Windows 界面尚未提供上游 macOS 版的网页登录和自动领取积分功能。
 
-Session files can contain sensitive conversation text even when only usage fields are displayed. Parsed usage is held in a bounded in-memory cache for refresh performance. Do not include actual session files, credentials, account responses, API tokens, private paths or unsanitized screenshots in reports, tests or commits. Windows or other software may manage memory and diagnostic files independently of this app.
+会话文件可能包含敏感对话，即使界面只显示用量。解析后的用量会暂存在有限的进程内存中，以便加快刷新。请不要在问题反馈、测试或提交中附上真实会话、凭据、账户响应、令牌、私人路径或未脱敏的截图。Windows 和其他软件可能独立管理内存及诊断文件。
 
-Only the latest Windows development version is currently maintained. Before sharing a report, reproduce the issue with synthetic data if possible.
+目前仅维护最新 Windows 开发版本。报告问题前，请尽可能用模拟数据复现。
 
-## Reporting a vulnerability
+## 报告漏洞
 
-Use **Report a vulnerability** on this repository's GitHub Security tab when available. If private reporting is not enabled, open an issue requesting a private reporting channel without posting credentials, private data, exploit details or a working exploit. For non-sensitive bugs, provide the Windows and application versions and sanitized reproduction steps.
+如仓库的 GitHub Security 页面提供 **Report a vulnerability**，请通过该入口私下报告。若未启用，可先提交不含敏感内容的问题，请维护者提供私下沟通方式；不要公开凭据、私人数据或可直接利用的细节。普通缺陷请附 Windows 版本、应用版本和脱敏复现步骤。
 
-The original macOS project's security documentation is retained in [docs/UPSTREAM-SECURITY.md](docs/UPSTREAM-SECURITY.md); its feature and storage descriptions do not automatically apply to this Windows interface.
+原项目的安全说明保留在 [docs/UPSTREAM-SECURITY.md](docs/UPSTREAM-SECURITY.md)，其中的功能和存储方式不一定适用于 Windows 界面。

@@ -1,10 +1,10 @@
-# Contributing
+# 参与贡献
 
-Thanks for helping improve the Windows port. Please open an issue describing significant changes before starting a large redesign, so that data semantics and platform constraints can be discussed.
+欢迎改进 Windows 版。涉及较大功能或界面调整时，建议先提交问题讨论数据口径与平台限制。
 
-## Development setup
+## 开发环境
 
-Use Windows x64, Python 3.10 and the .NET 8 SDK. From the repository root:
+使用 Windows x64、Python 3.10 和 .NET 8 SDK，在项目根目录运行：
 
 ```powershell
 py -3.10 -m venv .venv-win
@@ -14,8 +14,8 @@ dotnet build windows\AgentMeter.Windows -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File windows\build.ps1
 ```
 
-The build output is in `windows/dist/AgentMeter/`. `--demo` uses synthetic display data; `--window` shows the live-data panel as a normal taskbar window. Document any platform, account or feature that was not actually tested.
+构建结果位于 `windows/dist/AgentMeter/`。`--demo` 使用虚构数据，`--window` 将真实数据面板显示为普通任务栏窗口。请在提交说明中写清已验证和未验证的平台、账户与功能。
 
-Tests must use synthetic data and temporary paths. Preserve the distinction between account quota and local history, and do not turn absent or unsupported values into zero. Never commit credentials, transcripts, real account snapshots or private runtime data. Run `git diff --check` before submitting a change.
+测试应使用模拟数据和临时目录。请保持账户额度与本机历史的统计边界，不把缺失或不支持的值当作零；不要提交凭据、对话、真实账户快照或私人运行数据。提交前运行 `git diff --check`。
 
-For changes to the original macOS interface or other upstream components, see the retained [upstream contribution guide](docs/UPSTREAM-CONTRIBUTING.md) and coordinate with [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) as appropriate. This Windows port is an independent fork.
+原 macOS 项目等上游部分的贡献说明保留在 [docs/UPSTREAM-CONTRIBUTING.md](docs/UPSTREAM-CONTRIBUTING.md)；涉及上游的改动可与 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) 协调。本仓库是独立移植版。

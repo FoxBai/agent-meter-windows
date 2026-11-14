@@ -1,11 +1,11 @@
-# Agent Meter for Windows
+# Agent Meter for Windows 快速使用
 
-1. Keep the extracted folder intact and start `AgentMeter.Windows.exe`.
-2. Find the Agent Meter icon in the notification area. Expand the hidden-icons arrow if necessary.
-3. Left-click to open or hide the panel. Right-click for refresh and quit.
+1. 解压后保留完整文件夹，运行 `AgentMeter.Windows.exe`。
+2. 在 Windows 通知区域找到 Agent Meter 图标；如果没有看到，可展开隐藏图标。
+3. 左键显示或隐藏面板，右键可刷新或退出。
 
-The first scan can take a while when this computer has many agent sessions. The panel shows account limits separately from local token history. Missing information is not zero. For a fictional preview, run `AgentMeter.Windows.exe --demo`; for a standard taskbar window with live data, run `AgentMeter.Windows.exe --window`.
+本机会话较多时首次扫描可能较慢。账户额度和本机 Token 分别统计；未提供的数据不会当作零。运行 `AgentMeter.Windows.exe --demo` 可查看虚构演示数据；运行 `AgentMeter.Windows.exe --window` 可用普通任务栏窗口查看真实数据。
 
-The app uses the existing Codex installation and login to query Codex account quota. It reads supported local agent histories without uploading them through the Windows interface. See the project README and `THIRD_PARTY_NOTICES.md` for details. License texts are in `licenses/`.
+Codex 额度查询使用本机已有的 Codex 安装和登录状态。Windows 界面读取支持的本机历史，不通过该界面上传历史记录。详情见项目首页及 `THIRD_PARTY_NOTICES.md`；依赖许可文本位于 `licenses/`。
 
-项目说明与源码：<https://github.com/FoxBai/agent-meter-windows>
+项目地址：<https://github.com/FoxBai/agent-meter-windows>

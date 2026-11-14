@@ -1,7 +1,4 @@
-"""Small Windows-facing adapter over the upstream read-only collectors.
-
-Outputs only normalized metrics; never emits session content or credentials.
-"""
+"""Windows 适配层：复用上游只读采集器，仅输出指标，不输出会话内容或凭据。"""
 import argparse
 import json
 import os
@@ -20,6 +17,7 @@ from agent_meter.zcode_local import zcode_tokens_metric
 from agent_meter.dsh_tokens import collect_dsh_sessions
 from agent_meter.record_cache import records_cache
 from agent_meter.kimi_tokens import collect_kimi_tokens
+from agent_meter.kimi import collect_kimi
 from agent_meter.kimi_legacy_tokens import collect_kimi_legacy_tokens
 from agent_meter.opencode_tokens import collect_opencode_tokens, readonly_database as opencode_database
 from agent_meter.mimocode_tokens import collect_mimocode_tokens, collect_deveco_tokens
@@ -27,8 +25,7 @@ from agent_meter.qoder_tokens import collect_qoder_credits
 
 
 def codex_binary():
-    # Prefer a real executable: .cmd wrappers need a shell and must not be
-    # interpolated into a command line. Codex Desktop also ships its own exe.
+    # 优先使用真实可执行文件，避免把 .cmd 包装器拼入 shell 命令。
     found = shutil.which("codex.exe")
     if found:
         return found
@@ -45,6 +42,21 @@ def quota(binary, now):
             "credits": source["metrics"]["credits"], "reset_cards": source["metrics"]["reset_cards"]}
 
 
+def kimi_quota(home, now):
+    root = Path(os.environ.get("KIMI_CODE_HOME") or home / ".kimi-code")
+    # 只连接已运行的本地服务，不启动辅助进程、不发送提示词。
+    source = collect_kimi(home, None, now, timeout=3, start_server=False, server_root=root)
+    return {"status": source["status"], "quota": source["metrics"]["quota"],
+            "credits": source["metrics"]["credits"]}
+
+
+def account_sources(home, now):
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        codex = executor.submit(guarded, lambda: quota(codex_binary(), now))
+        kimi = executor.submit(guarded, lambda: kimi_quota(home, now))
+        return codex.result(), {"Kimi Code": kimi.result()}
+
+
 def histories(home, now):
     codex = Path(os.environ.get("CODEX_HOME") or home / ".codex")
     claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude")
@@ -58,8 +70,7 @@ def histories(home, now):
         if opencode_override == ":memory:":
             raise SourceError("opencode_memory_database")
         result = collect_opencode_tokens(opencode_path, now)["metrics"]["tokens"]
-        # Newer OpenCode releases can store messages in a second schema that
-        # the upstream v1 parser does not read. Do not present v1 as complete.
+        # 上游解析器尚不读取 OpenCode v2 消息；发现新版记录时标记不完整。
         with opencode_database(opencode_path) as connection:
             has_v2 = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_message'").fetchone()
             if has_v2 and connection.execute("SELECT 1 FROM session_message LIMIT 1").fetchone():
@@ -95,21 +106,24 @@ def collect(local_only=False, home=None, account_only=False):
     now = time.time()
     home = Path(home) if home else Path.home()
     if account_only:
+        codex, other_accounts = account_sources(home, now)
         return {"version": 1, "observed_at": int(now),
-                "account": guarded(lambda: quota(codex_binary(), now)), "history": {}}
+                "account": codex, "other_accounts": other_accounts, "history": {}}
     jobs = histories(home, now)
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {name: executor.submit(guarded, fn) for name, fn in jobs.items()}
         qoder = executor.submit(guarded, lambda: metric(collect_qoder_credits(home / ".qoder-cn" / "projects", now)))
-        account = None if local_only else executor.submit(guarded, lambda: quota(codex_binary(), now))
+        account = None if local_only else executor.submit(account_sources, home, now)
+        account_values = None if account is None else account.result()
         return {"version": 1, "observed_at": int(now),
-                "account": {"status": "disabled", "reason": "local_only"} if account is None else account.result(),
+                "account": {"status": "disabled", "reason": "local_only"} if account is None else account_values[0],
+                "other_accounts": {} if account_values is None else account_values[1],
                 "history": {name: future.result() for name, future in futures.items()},
                 "local_credits": {"Qoder CN": qoder.result()}}
 
 
 def compact_history(result):
-    """Send only fields the tray renders, keeping large per-model series local."""
+    """仅向面板传递显示字段，避免传输大量模型明细。"""
     compact = {"version": result["version"], "observed_at": result["observed_at"],
                "account": result["account"], "history": {}}
     for name, item in result["history"].items():
@@ -117,7 +131,7 @@ def compact_history(result):
         periods = value.get("periods", {}) if isinstance(value, dict) else {}
         all_period = periods.get("all", {})
         all_totals = all_period.get("totals", {}) if isinstance(all_period, dict) else {}
-        # An existing but empty history directory is not evidence of zero use.
+        # 目录存在但没有用量记录，不能据此认定实际消耗为零。
         if isinstance(all_totals, dict) and all_totals.get("requests") == 0:
             partial = item.get("status") == "partial"
             compact["history"][name] = {"status": "partial" if partial else "not_provided",
@@ -151,13 +165,7 @@ def compact_history(result):
 
 
 def history_worker(home=None):
-    """Keep the upstream parsed-usage cache in memory between refreshes.
-
-    No transcripts or credentials are persisted. File metadata invalidates a
-    cached item when its source changes; upstream applies its normal eviction
-    and completeness rules. The tiny stdin protocol exposes no path or code
-    execution interface.
-    """
+    """在刷新之间保留内存缓存；源文件变化时失效，不落盘会话或凭据。"""
     records_cache.max_bytes = 128 * 1024 * 1024
     records_cache.max_entries = 50000
     for line in sys.stdin:
@@ -173,7 +181,7 @@ def history_worker(home=None):
         except (ValueError, TypeError, KeyError):
             print('{"error":"invalid_request"}', flush=True)
         except Exception:
-            # Never return exception text, paths, source data, or credentials.
+            # 不返回异常原文、路径、原始数据或凭据。
             print('{"error":"history_scan_failed"}', flush=True)
 
 

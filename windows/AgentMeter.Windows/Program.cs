@@ -54,24 +54,36 @@ internal sealed class MeterWindow : Form
     readonly FlowLayoutPanel content = new();
     readonly Label status = new();
     readonly Button refresh = new();
+    readonly Button accountTab = new(), usageTab = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
     readonly bool demo;
     bool busy;
+    bool showAccounts = true;
+    string? lastSnapshot;
 
     public MeterWindow(bool demo, bool windowed)
     {
         this.demo = demo; Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
-        var header = new Panel { Dock = DockStyle.Top, Height = 100 };
-        var title = new Label { Text = "◈  AGENT METER", Font = new Font(Font.FontFamily, 16F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.White };
-        var subtitle = new Label { Text = "你的 AI 用量，一目了然", AutoSize = true, Location = new Point(25, 55), ForeColor = Muted };
+        var header = new Panel { Dock = DockStyle.Top, Height = 150 };
+        var title = new Label { Text = "◈  Agent 用量", Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.FromArgb(216, 207, 255) };
+        var subtitle = new Label { Text = "账户额度与本机消耗", AutoSize = true, Location = new Point(25, 55), ForeColor = Muted };
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = Color.FromArgb(76, 96, 111); refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
         header.Resize += (_, _) => refresh.Left = header.ClientSize.Width - refresh.Width - 22;
+        foreach (var tab in new[] { accountTab, usageTab })
+        {
+            tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Color.White;
+            tab.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold); tab.Size = new Size(132, 36);
+        }
+        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 95);
+        usageTab.Text = "本机消耗"; usageTab.Location = new Point(160, 95);
+        accountTab.Click += (_, _) => SetView(true); usageTab.Click += (_, _) => SetView(false);
+        header.Controls.AddRange([accountTab, usageTab]); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.Text = "正在准备…";
         content.Dock = DockStyle.Fill; content.FlowDirection = FlowDirection.TopDown; content.WrapContents = false; content.AutoScroll = true;
         content.Padding = new Padding(18, 0, 18, 14); content.BackColor = Background; content.SizeChanged += (_, _) => ResizeCards();
@@ -84,6 +96,12 @@ internal sealed class MeterWindow : Form
         Location = new Point(Math.Max(area.Left, area.Right - Width - 12), Math.Max(area.Top, area.Bottom - Height - 12));
     }
     protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
+    void UpdateTabs() { accountTab.BackColor = showAccounts ? Color.FromArgb(115, 76, 219) : Card; usageTab.BackColor = showAccounts ? Card : Color.FromArgb(115, 76, 219); }
+    void SetView(bool account)
+    {
+        showAccounts = account; UpdateTabs();
+        if (lastSnapshot is not null) { using var snapshot = JsonDocument.Parse(lastSnapshot); Render(snapshot.RootElement); }
+    }
 
     public async Task RefreshData()
     {
@@ -147,8 +165,11 @@ internal sealed class MeterWindow : Form
     }
     void Render(JsonElement root)
     {
+        lastSnapshot = root.GetRawText();
         content.SuspendLayout();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
+        if (showAccounts)
+        {
         AddHeading("账户额度", "来自账户接口 · 与本机 Token 分开统计");
         var account = GetValue(root, "account"); var quotas = GetValue(GetValue(account, "quota"), "value");
         if (quotas.ValueKind == JsonValueKind.Array && quotas.GetArrayLength() > 0)
@@ -185,6 +206,36 @@ internal sealed class MeterWindow : Form
             string note = expires.HasValue ? "最近到期 " + DateTimeOffset.FromUnixTimeSeconds((long)expires.Value).LocalDateTime.ToString("MM-dd HH:mm") : "到期时间未提供";
             AddCard("CODEX · 重置卡", $"{cardCount:0} 张可用", note, null);
         }
+        var otherAccounts = GetValue(root, "other_accounts");
+        var kimiAccount = GetValue(otherAccounts, "Kimi Code");
+        var kimiStatus = GetString(kimiAccount, "status", "");
+        if (kimiAccount.ValueKind == JsonValueKind.Object && GetString(kimiAccount, "reason", "") != "kimi_server_token_missing")
+        {
+            var kimiQuotas = GetValue(GetValue(kimiAccount, "quota"), "value");
+            if (kimiQuotas.ValueKind == JsonValueKind.Array && kimiQuotas.GetArrayLength() > 0)
+            {
+                foreach (var q in kimiQuotas.EnumerateArray())
+                {
+                    string bucket = GetString(q, "bucket", "");
+                    var window = GetValue(q, "window");
+                    double? duration = GetNumber(window, "duration");
+                    string unit = GetString(window, "unit", "");
+                    string label = bucket switch { "limit5h" => "5 小时", "limit7d" => "7 天", "monthTotal" => "月度总额", "monthCode" => "月度代码", _ => bucket };
+                    if (duration.HasValue) label = $"{duration:0.##} " + (unit switch { "hour" => "小时", "day" => "天", "week" => "周", "month" => "月", "minute" => "分钟", "second" => "秒", _ => unit });
+                    double? remaining = GetNumber(q, "remaining_percent");
+                    double? reset = GetNumber(GetValue(q, "resets_at"), "epoch_seconds");
+                    string note = reset.HasValue ? "重置于 " + DateTimeOffset.FromUnixTimeSeconds((long)reset.Value).LocalDateTime.ToString("MM-dd HH:mm") : "重置时间未提供";
+                    AddCard("KIMI CODE · " + label, remaining.HasValue ? $"{remaining:0.#}% 剩余" : "额度未提供", note, remaining);
+                }
+            }
+            else if (kimiStatus is "unavailable" or "error") AddCard("KIMI CODE", "暂时无法获取额度", Reason(kimiAccount), null);
+            var wallet = GetValue(GetValue(kimiAccount, "credits"), "value");
+            string amount = GetString(wallet, "amount", ""), currency = GetString(wallet, "unit", "");
+            if (amount != "" && currency != "") AddCard("KIMI CODE · 额外用量钱包", amount + " " + currency, "账户服务提供的余额", null);
+        }
+        }
+        else
+        {
         AddHeading("本机 Token", "只统计本设备可读取的会话记录");
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
@@ -234,6 +285,7 @@ internal sealed class MeterWindow : Form
                         allCredits == "" ? null : $"累计 {allCredits} · 计费 {billed}");
             }
         }
+        }
         content.ResumeLayout(); ResizeCards();
     }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
@@ -249,6 +301,8 @@ internal sealed class MeterWindow : Form
         "cli_not_available" => "未找到 Codex；请安装并登录后刷新",
         "rpc_timeout" => "账户查询超时，请稍后重试",
         "rpc_disconnected" => "Codex 服务未连接，请检查登录状态",
+        "kimi_server_not_running" => "未发现运行中的 Kimi 本地服务",
+        "kimi_server_token_invalid" => "Kimi 本地服务凭据不可用",
         "history_loading" => "后台扫描中，请稍候",
         "history_no_usage_records" => "没有可统计的用量记录",
         "codex_sessions_not_found" or "claude_projects_not_found" or "gemini_chats_not_found" or "workbuddy_projects_not_found" or "zcode_db_not_found" or "dsh_sessions_not_found" => "未找到本机会话记录",
@@ -266,7 +320,7 @@ internal sealed class MeterWindow : Form
     }
     void AddCard(string name, string value, string detail, double? progress, string? extra = null)
     {
-        var box = new Panel { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 9), BackColor = Card };
+        var box = new RoundedCard { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
         box.Controls.Add(new Label { Text = name, AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 11) });
         box.Controls.Add(new Label { Text = value, AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
         box.Controls.Add(new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(16, progress.HasValue ? 84 : 67) });
@@ -281,8 +335,29 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
     """;
+}
+internal sealed class RoundedCard : Panel
+{
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (Width < 2 || Height < 2) return;
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        int r = 20, w = Width - 1, h = Height - 1;
+        path.AddArc(0, 0, r, r, 180, 90); path.AddArc(w - r, 0, r, r, 270, 90);
+        path.AddArc(w - r, h - r, r, r, 0, 90); path.AddArc(0, h - r, r, r, 90, 90); path.CloseFigure();
+        Region?.Dispose(); Region = new Region(path);
+        Invalidate();
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var border = new Pen(Color.FromArgb(65, 74, 100));
+        e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+    }
 }
 internal sealed class MeterBar : Control
 {
@@ -290,7 +365,7 @@ internal sealed class MeterBar : Control
     protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(Color.FromArgb(53, 67, 79)); using var brush = new SolidBrush(Value < 20 ? Color.FromArgb(244, 136, 116) : Color.FromArgb(117, 220, 194)); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
 }
 
-/// <summary>One local, read-only worker preserves parsed usage in memory between refreshes.</summary>
+/// <summary>本地只读工作进程在刷新之间保留已解析的用量缓存。</summary>
 internal sealed class HistoryWorker : IDisposable
 {
     Process? process;

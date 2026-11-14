@@ -1,4 +1,6 @@
-# Third party notices
+# 第三方声明与许可
+
+以下保留第三方组件的英文许可原文；Windows 发布包中的完整许可文件见 `licenses/`。
 
 ## Windows bundle
 

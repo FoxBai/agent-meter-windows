@@ -1,29 +1,32 @@
-# Windows port plan
+# Windows 版移植与验收计划
 
-Source baseline: Gary23333/agent-meter v0.11.0, commit ac547d0dd56031cad70c3f0adf6266ce96a69bf9, MIT license. Retain the original copyright and license, document modifications and third-party notices.
+目标是以 [Gary23333/agent-meter](https://github.com/Gary23333/agent-meter) v0.11.0（提交 `ac547d0`）为对照，完成具备相近功能完整度与视觉质量的 Windows 版本。系统托盘是常驻入口；账户额度与本机账本分别计量。保留原作者 MIT 版权声明，并在仓库、安装包中说明依赖与来源。
 
-## Objective and acceptance
+## 与 Mac 版逐项对照
 
-Build a usable Windows application inspired by the original macOS app, with a native system tray icon and a clear, responsive panel. Support practical account quota, reset times, local token history and refresh status where the Windows data sources have actually been adapted and verified. Preserve the distinction between account quota and per-device history; missing values must not become zero. Any unsupported original feature or provider must be explicitly identified, not represented as working.
+| 功能或界面 | Windows 当前状态 | 后续验收 |
+| --- | --- | --- |
+| 托盘入口、行情与交互 | 托盘图标、打开、刷新和退出已实现；关闭面板后进程保留，完整托盘菜单交互尚待实测 | 验证隐藏图标、显示与隐藏、退出清理、多屏和高 DPI；设计适合 Windows 的行情展示 |
+| 账户额度 | Codex 已在本机实测；Kimi 的已运行本地服务接入正在用模拟服务验证 | 继续适配 Claude、Qoder、WorkBuddy、TRAE、MiniMax、即梦及其他原项目来源；逐项标记真实账户验证状态 |
+| 应用和本机消耗 | 多个本地账本已接入，今日、7 天、30 天和累计视图正在完善；Qoder 积分独立计量 | 完善各客户端路径、活动、项目归因、模型排行、构成图、历史导入和重复计数规则 |
+| 模型与计费 | 尚未完成 | 移植模型目录同步、自定义价格、估算费用、峰谷和汇率，并明确估算不等于账单 |
+| 七套主题与卡片 | 现有深色界面仍与 Mac 版差距较大；账户和本机消耗独立页面正在开发 | 对照上游截图和交互，完善七种主题、分组卡片、额度环、曲线和自适应布局 |
+| 通知与自动领取 | 尚未完成 | 移植额度、重置卡、积分和订阅提醒；自动领取默认关闭，逐平台验证写操作与授权 |
+| 多账号 | 尚未完成 | 使用 Windows 凭据保护机制，实现账户隔离、切换和安全删除 |
+| 重置预测 | 尚未完成 | 保留第三方来源与概率口径，不把预测当作实际账户重置 |
+| 用量报告与分享 | 尚未完成 | 对齐时段、内容开关、分享图和隐私说明，校验导出数据 |
+| 收集册和奖章 | 尚未完成 | 复用账本与规则，移植卡片、奖章、动效和分享 |
+| 桌面宠物 | 尚未完成 | 移植运行时、形象包、状态联动、显示控制和安装体验 |
+| 中文体验与文档 | 中文首页、快速使用、安全和贡献说明正在调整；英文作为辅助 | Windows 新代码的说明与注释以中文为主，保证 README、实际行为及下载版本一致 |
 
-Provide explicit refresh, background refresh with non-blocking UI, clear offline and error states, clean shutdown, Windows-appropriate data storage and a convenient distribution package. Avoid exposing secrets or session contents, and ensure the release repository contains no private runtime data. Test Windows paths, subprocess behavior, accounting, tray lifecycle, fresh-install startup and packaging; check actual UI and document the precise limits of any testing. Account access and network behavior should be explained clearly to users.
+## 当前证据和限制
 
-Create a public GitHub repository under the authenticated account after implementation and checks. Write a polished Chinese and English README covering purpose, screenshots from the actual product, supported platforms and providers, install and build instructions, permissions and privacy, data limitations, troubleshooting, attribution, license and contribution information. Do not publish claims or badges unsupported by evidence. Include a useful license, third-party notices, build configuration, and appropriate automated checks.
+- Codex 账户额度和本机历史已在开发电脑上读取；Codex 累计 Token 与原始记录独立重算一致。WorkBuddy 和 ZCode 今日及累计账本也与独立重算一致；不代表其他账户或版本均已验证。
+- Kimi、OpenCode、MiniMax Code、MiMo Code、DevEco 和 Qoder CN 的新增读取器目前以模拟数据验证为主。Kimi 账户通过模拟本地服务测试；尚无真实 Windows 账户验收。OpenCode 检测到新版消息时标记统计不完整。
+- 真实大账本首次扫描约 91 秒，同一进程内第二次约 1.3 秒；缓存只保存在内存，文件变化会重新读取。测试结果只适用于本机数据规模。
+- GitHub Windows 运行器已构建便携包并通过隔离数据和程序启动检查；开发电脑也验证了解压启动。完整托盘交互与另一台独立实体电脑尚未验证。
+- 当前公开 [Alpha 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.1) 并非完整移植，尚未代码签名。版本发布必须使用与已验证提交一致的构建，公开说明真实支持范围和未验证项。
 
-## Initial findings
+## 安全与数据边界
 
-- The original GUI uses SwiftUI/AppKit and cannot be directly used on Windows. Its Python collector contains macOS-specific application paths and Keychain integration; providers must be evaluated independently.
-- Windows Python 3.10 requires the `tzdata` package for `zoneinfo`. Compressed session logs require an available zstd implementation.
-- Initial upstream test run on Windows did not pass: missing zstd causes several errors, an upstream test assumes a missing test module, and other tests reveal Windows-specific file locking or path issues. Investigate each before claiming compatibility.
-- GitHub CLI is authenticated as FoxBai. Upstream remains the `origin` remote in this local clone; never push this work to the upstream repository.
-
-## Working prototype checkpoint
-
-- `windows/AgentMeter.Windows/` contains a WinForms tray/panel prototype; `windows/backend.py` wraps upstream read-only collectors. Codex account quota and reset time are read through `codex app-server`; Codex, Claude Code, Gemini CLI, WorkBuddy, ZCode and DeepSeek Harness local histories have adapters, with platform-specific validation still needed. Treat this as a prototype, not a complete port of upstream's full provider and feature set.
-- The panel has separate account and history sections. Account and history run in separate child processes so the account renders while slow local history scans run; closing the app cancels child processes. Demo data (`--demo`) and an actual-data window (`--window`) are available for inspection.
-- Windows dependencies include `tzdata` and `zstandard`. `windows/build.ps1` builds a self-contained Windows x64 bundle. The frozen backend's account-only path returned an available quota on this computer and its empty-home path reported missing histories. Targeted synthetic tests and upstream source-normalization tests passed. A demo UI refresh, actual account-first display and eventual Codex local history were inspected; full tray operation, shutdown, packaging on a clean machine, and broader provider coverage still need validation. Direct source collectors also reported available WorkBuddy, ZCode and DeepSeek Harness histories on this machine.
-- The history worker now keeps a bounded 128 MiB parsed-usage cache in memory and invalidates entries when their source changes. A source-mode run on this machine took 91.08 seconds for the initial scan and 1.28 seconds for the second. The packaged UI successfully completed a large real-data scan and a subsequent refresh; a synthetic test checks changed session data and compact output. The first scan remains expensive.
-- On the development machine, independent upstream reference routines matched the collector's Codex all-time reported-token total, plus WorkBuddy and ZCode today's and all-time request/token breakdowns. These checks do not validate every possible schema, historical period, account or other provider.
-- The next preview adds 7/30-day views, Kimi Code and legacy Kimi CLI, OpenCode, MiniMax Code, MiMo Code, DevECo local-token readers, and a separate Qoder CN local-credit card. Windows synthetic tests cover these adapters; Kimi and Qoder were also exercised end-to-end through a frozen app using an isolated synthetic home. No real Windows installations of these newly added sources were available on this machine. OpenCode's v2 `session_message` rows are detected and marked partial, not counted. Kimi's `KIMI_CODE_HOME` and OpenCode's `XDG_DATA_HOME`/`OPENCODE_DB` overrides are based on their [official Kimi storage documentation](https://moonshotai.github.io/kimi-code/en/guides/sessions.html) and [OpenCode CLI documentation](https://opencode.ai/docs/cli/providers); custom paths and v2 detection have synthetic tests.
-- GitHub's fresh Windows runner also built the package, passed the isolated backend smoke test and kept the demo application running through its startup smoke check (workflow run 43515266625). This is not a visual tray interaction test or a separate clean physical-machine test.
-- The public fork is at https://github.com/FoxBai/agent-meter-windows. Windows CI and the upstream CI matrix passed on commit 6286af6; a prerelease at `windows-v0.1.0-alpha.1` contains the verified CI-built x64 archive and its SHA-256 checksum. The demo screenshot contains fictional values. An extracted package was smoke-tested on the development computer, not on a separate clean physical Windows installation. Remaining work includes extending and documenting supported sources and upstream features, refining usability/accessibility, localization, full tray lifecycle and shutdown testing, independent accounting checks and clean-machine validation.
+读取用量只应访问对应的本机账本和已授权账户接口；凭据、对话、账户快照和真实截图不得进入日志、测试夹具或公开仓库。缺失不等于零，不同服务的积分不混算，本机历史不等于账户总量。涉及联网、登录、导出、自动领取和桌宠分享时，分别说明数据来源、写操作和用户控制方式。

@@ -1,4 +1,4 @@
-"""Regenerate the original vector-style tray icon (requires Pillow)."""
+"""重新生成项目的托盘图标，需要安装 Pillow。"""
 from pathlib import Path
 from PIL import Image, ImageDraw
 

@@ -1,10 +1,12 @@
-"""Windows adapter tests use synthetic data and do not access user accounts."""
+"""Windows 适配层测试：只使用模拟数据，不访问用户账户。"""
 import json
 import os
 import sqlite3
 import subprocess
 import sys
 import time
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -17,9 +19,46 @@ except ImportError:
     zstandard = None
 from windows import backend
 from agent_meter.model import SourceError
+from agent_meter.kimi import process_exists
 
 
 class WindowsBackendTests(unittest.TestCase):
+    def test_kimi_process_probe_does_not_terminate_process(self):
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            self.assertTrue(process_exists(child.pid))
+            self.assertIsNone(child.poll())
+        finally:
+            child.terminate(); child.wait(timeout=10)
+
+    def test_kimi_existing_local_server_quota(self):
+        token = 'synthetic-local-token'
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_GET(self):
+                if self.path != '/api/v1/oauth/usage' or self.headers.get('Authorization') != 'Bearer ' + token:
+                    self.send_error(401); return
+                payload = {'code': 0, 'data': {'kind': 'ok', 'quota': {'usages': {
+                    'limit5h': {'usedRatio': .25, 'resetAt': None}},
+                    'extraUsage': {'balanceCents': 1234, 'currency': 'CNY'}}}}
+                body = json.dumps(payload).encode()
+                self.send_response(200); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}):
+                kimi_root = Path(root) / '.kimi-code'
+                instances = kimi_root / 'server' / 'instances'; instances.mkdir(parents=True)
+                (kimi_root / 'server.token').write_text(token, encoding='utf-8')
+                (instances / 'test.json').write_text(json.dumps({'pid': os.getpid(), 'host': '127.0.0.1',
+                                                                 'port': server.server_port}), encoding='utf-8')
+                result = backend.kimi_quota(Path(root), time.time())
+            self.assertEqual(result['quota']['value'][0]['remaining_percent'], 75)
+            self.assertEqual(result['credits']['value']['amount'], '12.34')
+            self.assertNotIn(token, json.dumps(result))
+        finally:
+            server.shutdown(); server.server_close(); thread.join(timeout=5)
+
     def test_minimax_reads_committed_wal_updates_on_windows(self):
         with tempfile.TemporaryDirectory() as root:
             db = Path(root) / '.minimax' / 'v2' / 'sqlite' / 'runtime-state.sqlite'
@@ -149,10 +188,11 @@ class WindowsBackendTests(unittest.TestCase):
                 worker.stdout.close(); worker.stderr.close()
 
     def test_account_only_does_not_start_history_scan(self):
-        with patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'KIMI_CODE_HOME': ''}), \
+             patch.object(backend, 'histories', side_effect=AssertionError('history scan called')), \
              patch.object(backend, 'codex_binary', return_value='codex.exe'), \
              patch.object(backend, 'quota', return_value={'status': 'available'}):
-            result = backend.collect(account_only=True)
+            result = backend.collect(account_only=True, home=root)
         self.assertEqual(result['account']['status'], 'available')
         self.assertEqual(result['history'], {})
 
