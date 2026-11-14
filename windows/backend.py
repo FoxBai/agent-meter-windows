@@ -142,7 +142,8 @@ def compact_history(result):
             bucket = periods.get(period)
             totals = bucket.get("totals") if isinstance(bucket, dict) else None
             if isinstance(totals, dict) and "total_tokens" in totals:
-                selected[period] = {"totals": {"total_tokens": totals["total_tokens"]}}
+                keys = ("total_tokens", "requests", "fresh_input", "output", "reasoning", "cache_read", "cache_write", "unclassified")
+                selected[period] = {"totals": {key: totals[key] for key in keys if key in totals}}
         compact["history"][name] = {"status": item.get("status"), "reason": item.get("reason"),
                                     "value": {"periods": selected} if selected else None}
     compact["local_credits"] = {}

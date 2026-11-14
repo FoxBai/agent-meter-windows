@@ -246,6 +246,7 @@ internal sealed class MeterWindow : Form
         var history = GetValue(root, "history");
         if (history.ValueKind == JsonValueKind.Object)
         {
+            AddUsageSummary(history);
             int visible = 0;
             foreach (var item in history.EnumerateObject())
             {
@@ -351,6 +352,39 @@ internal sealed class MeterWindow : Form
         box.Controls.Add(new Label { Text = title, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), AutoSize = true, Location = new Point(3, 5), ForeColor = Color.White });
         box.Controls.Add(new Label { Text = subtitle, AutoSize = true, Location = new Point(3, 32), ForeColor = Muted }); content.Controls.Add(box);
     }
+    void AddUsageSummary(JsonElement history)
+    {
+        double total = 0; int sources = 0; bool complete = true; bool partial = false;
+        double[] parts = new double[5];
+        foreach (var item in history.EnumerateObject())
+        {
+            var totals = GetValue(GetValue(GetValue(GetValue(item.Value, "value"), "periods"), "today"), "totals");
+            var amount = GetNumber(totals, "total_tokens");
+            if (!amount.HasValue || amount.Value < 0) continue;
+            total += amount.Value; sources++;
+            partial |= GetString(item.Value, "status", "") == "partial";
+            double[] values = [GetNumber(totals, "fresh_input") ?? 0,
+                (GetNumber(totals, "output") ?? 0) + (GetNumber(totals, "reasoning") ?? 0),
+                GetNumber(totals, "cache_read") ?? 0, GetNumber(totals, "cache_write") ?? 0,
+                GetNumber(totals, "unclassified") ?? 0];
+            if (Math.Abs(values.Sum() - amount.Value) > 0.5) complete = false;
+            for (int i = 0; i < parts.Length; i++) parts[i] += values[i];
+        }
+        if (sources == 0) return;
+        var box = new RoundedCard { Height = 190, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        box.Controls.Add(new Label { Text = "今日 Token 总量", AutoSize = true, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), ForeColor = Muted, Location = new Point(15, 10) });
+        box.Controls.Add(new Label { Text = FormatNumber(total), AutoSize = true, Font = new Font(Font.FontFamily, 20F, FontStyle.Bold), ForeColor = Color.White, Location = new Point(14, 31) });
+        box.Controls.Add(new Label { Text = $"{sources} 个本机账本相加" + (partial ? " · 含不完整来源" : ""), AutoSize = true, ForeColor = Muted, Location = new Point(16, 82) });
+        if (complete && total > 0)
+        {
+            var bar = new BreakdownBar(parts) { Location = new Point(16, 116), Height = 9 };
+            box.Resize += (_, _) => bar.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(bar);
+            var legend = new Label { Text = "输入 · 输出 · 缓存读取\n缓存写入 · 未拆分", AutoSize = false, ForeColor = Muted, Location = new Point(16, 137), Height = 48 };
+            box.Resize += (_, _) => legend.Width = Math.Max(0, box.ClientSize.Width - 32); box.Controls.Add(legend);
+        }
+        else box.Controls.Add(new Label { Text = "部分来源未提供完整拆分", AutoSize = true, ForeColor = Muted, Location = new Point(16, 125) });
+        content.Controls.Add(box);
+    }
     void AddCard(string name, string value, string detail, double? progress, string? extra = null)
     {
         var box = new RoundedCard { Height = progress.HasValue ? 112 : extra is null ? 95 : 120, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
@@ -368,7 +402,7 @@ internal sealed class MeterWindow : Form
     }
     void ResizeCards() { foreach (Control c in content.Controls) c.Width = Math.Max(300, content.ClientSize.Width - 52); }
     const string DemoData = """
-    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
+    {"account":{"status":"available","quota":{"value":[{"bucket":"codex","window":"primary","window_minutes":300,"remaining_percent":73,"resets_at":{"epoch_seconds":1794654000}},{"bucket":"codex","window":"secondary","window_minutes":10080,"remaining_percent":46,"resets_at":{"epoch_seconds":1794913200}}]}},"other_accounts":{"Kimi Code":{"status":"available","quota":{"value":[{"bucket":"limit5h","remaining_percent":64,"resets_at":{"epoch_seconds":1794654000}}]},"credits":{"value":{"amount":"12.34","unit":"CNY"}}}},"history":{"Codex":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":1426000,"fresh_input":300000,"output":126000,"reasoning":0,"cache_read":1000000,"cache_write":0}},"7d":{"totals":{"total_tokens":7600000}},"30d":{"totals":{"total_tokens":25800000}},"all":{"totals":{"total_tokens":102000000}}}}},"Claude Code":{"status":"available","value":{"periods":{"today":{"totals":{"total_tokens":341000,"fresh_input":100000,"output":41000,"reasoning":0,"cache_read":200000,"cache_write":0}},"7d":{"totals":{"total_tokens":900000}},"30d":{"totals":{"total_tokens":2400000}},"all":{"totals":{"total_tokens":3800000}}}}},"Gemini CLI":{"status":"unavailable","reason":"gemini_chats_not_found"}},"local_credits":{"Qoder CN":{"status":"available","value":{"periods":{"today":{"totals":{"credits":"12.5"}},"7d":{"totals":{"credits":"75"}},"30d":{"totals":{"credits":"248"}},"all":{"totals":{"credits":"560","billable_credits":"420"}}}}}}}
     """;
 }
 internal sealed class RoundedCard : Panel
@@ -420,6 +454,22 @@ internal sealed class QuotaGauge : Control
         TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), Color.White, TextFormatFlags.HorizontalCenter);
         TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter);
+    }
+}
+internal sealed class BreakdownBar : Control
+{
+    readonly double[] values;
+    static readonly Color[] Colors = [Color.FromArgb(95, 164, 255), Color.FromArgb(166, 112, 255), Color.FromArgb(69, 208, 185), Color.FromArgb(255, 176, 73), Color.FromArgb(151, 154, 168)];
+    public BreakdownBar(double[] values) { this.values = values; DoubleBuffered = true; AccessibleName = "今日用量构成：输入、输出、缓存读取、缓存写入和未拆分"; }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e); double total = values.Sum(), start = 0;
+        if (total <= 0) return;
+        for (int i = 0; i < values.Length; i++)
+        {
+            float left = (float)(Width * start / total), right = (float)(Width * (start + values[i]) / total);
+            using var brush = new SolidBrush(Colors[i]); e.Graphics.FillRectangle(brush, left, 0, Math.Max(0, right - left), Height); start += values[i];
+        }
     }
 }
 

@@ -149,7 +149,7 @@ class WindowsBackendTests(unittest.TestCase):
         result = backend.compact_history(source)['history']['Codex']
         self.assertEqual(result['status'], 'partial')
         self.assertEqual(result['reason'], 'some_skipped')
-        self.assertEqual(result['value'], {'periods': {'today': {'totals': {'total_tokens': 12}},
+        self.assertEqual(result['value'], {'periods': {'today': {'totals': {'total_tokens': 12, 'cache_read': 8}},
                                                        '7d': {'totals': {'total_tokens': 20}},
                                                        '30d': {'totals': {'total_tokens': 35}},
                                                        'all': {'totals': {'total_tokens': 60}}}})
