@@ -197,6 +197,7 @@ internal sealed class MeterWindow : Form
     readonly Panel header = new();
     readonly Label title = new(), subtitle = new();
     readonly Button accountTab = new(), applicationsTab = new(), usageTab = new(), reportTab = new(), forecastTab = new(), collectionTab = new();
+    readonly Font tabRegular = new("Microsoft YaHei UI", 9F, FontStyle.Bold), tabCompact = new("Microsoft YaHei UI", 8F, FontStyle.Bold);
     readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
@@ -234,7 +235,7 @@ internal sealed class MeterWindow : Form
         foreach (var tab in new[] { accountTab, applicationsTab, usageTab, reportTab, forecastTab, collectionTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Primary;
-            tab.Font = new Font(Font.FontFamily, 9F, FontStyle.Bold); tab.Size = new Size(86, 36);
+            tab.Font = tabRegular; tab.Size = new Size(86, 36);
         }
         gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 135);
         gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -299,7 +300,12 @@ internal sealed class MeterWindow : Form
         SetView(View.Collection); SavePreview("aurora-collection-narrow");
         Hide();
     }
-    protected override void Dispose(bool disposing) { if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); } base.Dispose(disposing); }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) { shutdown.Cancel(); historyWorker.Dispose(); timer.Dispose(); }
+        base.Dispose(disposing);
+        if (disposing) { tabRegular.Dispose(); tabCompact.Dispose(); }
+    }
     void UpdateTabs()
     {
         foreach (var (button, tab) in new[] { (accountTab, View.Accounts), (applicationsTab, View.Applications), (usageTab, View.Usage), (reportTab, View.Report), (forecastTab, View.Forecast), (collectionTab, View.Collection) })
@@ -316,13 +322,7 @@ internal sealed class MeterWindow : Form
         {
             tabs[index].Size = new Size(width, 36);
             tabs[index].Location = new Point(22 + index * (width + 4), 228);
-            float textSize = width < 70 ? 8F : 9F;
-            if (Math.Abs(tabs[index].Font.Size - textSize) > 0.01F)
-            {
-                var old = tabs[index].Font;
-                tabs[index].Font = new Font(Font.FontFamily, textSize, FontStyle.Bold);
-                old.Dispose();
-            }
+            tabs[index].Font = width < 70 ? tabCompact : tabRegular;
         }
     }
     public string ThemeId => theme.Id;
