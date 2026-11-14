@@ -55,6 +55,7 @@ internal sealed class MeterWindow : Form
     readonly Label status = new();
     readonly Button refresh = new();
     readonly Button accountTab = new(), usageTab = new();
+    readonly FlowLayoutPanel gauges = new();
     readonly System.Windows.Forms.Timer timer = new();
     readonly CancellationTokenSource shutdown = new();
     readonly HistoryWorker historyWorker = new();
@@ -68,20 +69,24 @@ internal sealed class MeterWindow : Form
         this.demo = demo; Text = "Agent Meter"; Font = new Font("Microsoft YaHei UI", 10F); BackColor = Background; ForeColor = Color.White;
         ClientSize = new Size(500, 760); MinimumSize = new Size(420, 480); StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = demo || windowed; FormBorderStyle = demo || windowed ? FormBorderStyle.Sizable : FormBorderStyle.SizableToolWindow;
-        var header = new Panel { Dock = DockStyle.Top, Height = 150 };
+        var header = new Panel { Dock = DockStyle.Top, Height = 270 };
         var title = new Label { Text = "◈  Agent 用量", Font = new Font(Font.FontFamily, 17F, FontStyle.Bold), AutoSize = true, Location = new Point(22, 16), ForeColor = Color.FromArgb(216, 207, 255) };
         var subtitle = new Label { Text = "账户额度与本机消耗", AutoSize = true, Location = new Point(25, 55), ForeColor = Muted };
         refresh.Text = "刷新"; refresh.Size = new Size(66, 32); refresh.Location = new Point(0, 23);
         refresh.FlatStyle = FlatStyle.Flat; refresh.FlatAppearance.BorderColor = Color.FromArgb(76, 96, 111); refresh.ForeColor = Accent; refresh.BackColor = Card;
         refresh.Click += async (_, _) => await RefreshData(); header.Controls.AddRange([title, subtitle, refresh]);
-        header.Resize += (_, _) => refresh.Left = header.ClientSize.Width - refresh.Width - 22;
+        header.Resize += (_, _) => { refresh.Left = header.ClientSize.Width - refresh.Width - 22; gauges.Width = Math.Max(0, header.ClientSize.Width - 40); };
         foreach (var tab in new[] { accountTab, usageTab })
         {
             tab.FlatStyle = FlatStyle.Flat; tab.FlatAppearance.BorderSize = 0; tab.ForeColor = Color.White;
             tab.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold); tab.Size = new Size(132, 36);
         }
-        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 95);
-        usageTab.Text = "本机消耗"; usageTab.Location = new Point(160, 95);
+        gauges.Location = new Point(20, 82); gauges.Size = new Size(450, 120);
+        gauges.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        gauges.WrapContents = false; gauges.AutoScroll = true; gauges.BackColor = Background;
+        header.Controls.Add(gauges);
+        accountTab.Text = "账户额度"; accountTab.Location = new Point(22, 217);
+        usageTab.Text = "本机消耗"; usageTab.Location = new Point(160, 217);
         accountTab.Click += (_, _) => SetView(true); usageTab.Click += (_, _) => SetView(false);
         header.Controls.AddRange([accountTab, usageTab]); UpdateTabs();
         status.Dock = DockStyle.Bottom; status.Height = 39; status.Padding = new Padding(22, 8, 0, 0); status.ForeColor = Muted; status.Text = "正在准备…";
@@ -166,6 +171,7 @@ internal sealed class MeterWindow : Form
     void Render(JsonElement root)
     {
         lastSnapshot = root.GetRawText();
+        UpdateGauges(root);
         content.SuspendLayout();
         while (content.Controls.Count > 0) content.Controls[0].Dispose();
         if (showAccounts)
@@ -288,6 +294,33 @@ internal sealed class MeterWindow : Form
         }
         content.ResumeLayout(); ResizeCards();
     }
+    void UpdateGauges(JsonElement root)
+    {
+        while (gauges.Controls.Count > 0) gauges.Controls[0].Dispose();
+        AddGauge("Codex", GetValue(root, "account"));
+        AddGauge("Kimi", GetValue(GetValue(root, "other_accounts"), "Kimi Code"));
+        if (gauges.Controls.Count == 0)
+            gauges.Controls.Add(new Label { Text = "暂无可用账户额度", ForeColor = Muted, AutoSize = true, Margin = new Padding(5, 32, 0, 0) });
+    }
+    void AddGauge(string provider, JsonElement account)
+    {
+        var quotas = GetValue(GetValue(account, "quota"), "value");
+        if (quotas.ValueKind != JsonValueKind.Array) return;
+        foreach (var row in quotas.EnumerateArray())
+        {
+            var remaining = GetNumber(row, "remaining_percent");
+            if (!remaining.HasValue) continue;
+            var minutes = GetNumber(row, "window_minutes");
+            var bucket = GetString(row, "bucket", "");
+            var window = GetValue(row, "window");
+            var duration = GetNumber(window, "duration");
+            var unit = GetString(window, "unit", "");
+            string label = minutes == 300 || bucket == "limit5h" ? "5 小时" : minutes == 10080 || bucket == "limit7d" ? "7 天" :
+                duration.HasValue ? $"{duration:0.#}{(unit == "hour" ? "小时" : unit == "week" ? "周" : unit)}" : GetString(row, "window", bucket);
+            gauges.Controls.Add(new QuotaGauge(provider, label, Math.Clamp(remaining.Value, 0, 100)));
+            return;
+        }
+    }
     static string FormatNumber(double n) => n >= 1_000_000_000 ? $"{n / 1_000_000_000:0.##}B" : n >= 1_000_000 ? $"{n / 1_000_000:0.##}M" : n >= 1_000 ? $"{n / 1_000:0.##}K" : $"{n:0}";
     static JsonElement GetValue(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
     static string GetString(JsonElement e, string key, string fallback) { var v = GetValue(e, key); return v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback; }
@@ -363,6 +396,31 @@ internal sealed class MeterBar : Control
 {
     public double Value { get; set; }
     protected override void OnPaint(PaintEventArgs e) { e.Graphics.Clear(Color.FromArgb(53, 67, 79)); using var brush = new SolidBrush(Value < 20 ? Color.FromArgb(244, 136, 116) : Color.FromArgb(117, 220, 194)); e.Graphics.FillRectangle(brush, 0, 0, (float)(Width * Value / 100), Height); }
+}
+internal sealed class QuotaGauge : Control
+{
+    readonly string provider, period;
+    readonly double remaining;
+    public QuotaGauge(string provider, string period, double remaining)
+    {
+        this.provider = provider; this.period = period; this.remaining = remaining;
+        Size = new Size(110, 110); Margin = new Padding(0, 0, 9, 0);
+        AccessibleRole = AccessibleRole.Graphic; AccessibleName = $"{provider} {period}，剩余 {remaining:0.#}%";
+        DoubleBuffered = true;
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e); e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var ring = new Rectangle(25, 4, 52, 52);
+        using var track = new Pen(Color.FromArgb(48, 52, 68), 7);
+        using var fill = new Pen(remaining < 20 ? Color.FromArgb(255, 98, 135) : remaining < 50 ? Color.FromArgb(255, 169, 58) : Color.FromArgb(61, 218, 175), 7);
+        fill.StartCap = fill.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+        e.Graphics.DrawArc(track, ring, -90, 359); if (remaining > 0) e.Graphics.DrawArc(fill, ring, -90, (float)(3.59 * remaining));
+        using var valueFont = new Font(Font.FontFamily, 11F, FontStyle.Bold);
+        TextRenderer.DrawText(e.Graphics, $"{remaining:0.#}%", valueFont, ring, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        TextRenderer.DrawText(e.Graphics, provider, Font, new Rectangle(0, 61, Width, 23), Color.White, TextFormatFlags.HorizontalCenter);
+        TextRenderer.DrawText(e.Graphics, period, Font, new Rectangle(0, 84, Width, 23), Color.FromArgb(158, 170, 190), TextFormatFlags.HorizontalCenter);
+    }
 }
 
 /// <summary>本地只读工作进程在刷新之间保留已解析的用量缓存。</summary>
