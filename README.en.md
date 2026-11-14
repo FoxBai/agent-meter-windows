@@ -51,7 +51,7 @@ The table describes the current `main` branch. Check the release notes for the e
 | Codex | Quota and reset time; credits and reset cards when available | Codex sessions and archives |
 | Claude Code | Existing local subscription credential (synthetic validation) | Local project sessions |
 | Gemini CLI | Not yet | Local chat sessions |
-| WorkBuddy | Experimental opt-in web login and credit lookup on main only (synthetic validation; not in Alpha 7) | Local project sessions |
+| WorkBuddy | Experimental opt-in web login and credit lookup (synthetic validation) | Local project sessions |
 | ZCode | Not yet | Local CLI usage database |
 | DeepSeek Harness | Not yet | Local session logs, including supported compressed logs |
 | DeepSeek API | API balance, explicit key and opt-in (synthetic validation) | No direct local history; DeepSeek Harness is separate |
@@ -73,7 +73,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.7](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.7), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.8](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.8), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the application runtime; WorkBuddy requires a separately installed WebView2 Runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 
@@ -113,7 +113,7 @@ Third-party forecasts are off by default. Enabling them contacts `willreset.com`
 
 The DeepSeek API key is added by the user and stored in Windows Credential Manager. When enabled it is passed to the local backend over standard input and sent over HTTPS to the official balance endpoint, not written to the command line or app logs. The feature does not read browser sessions or environment keys; users can delete the saved key from the tray menu.
 
-The experimental WorkBuddy feature on main is off by default and requires the separately installed [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). It uses an app-owned profile under `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy`, never the user's existing browser profile. Canceling login retains local data; the clear button removes local browsing data but does not log out on the server. When enabled, cookies and the user agent pass to the local backend through standard input and are sent to the upstream project's WorkBuddy HTTPS usage endpoint, which is not a stable public API contract. The app stops when it cannot confirm profile isolation; even unrelated WebView2 policies may prevent use. Top-level and popup navigation is restricted to HTTPS on WorkBuddy, QQ and Tencent domains; downloads and external apps are blocked, so some login methods may not work. Real accounts and sign-in flows remain unverified.
+The experimental WorkBuddy feature is off by default and requires the separately installed [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). It uses an app-owned profile under `%LOCALAPPDATA%\AgentMeter\webprofiles\workbuddy`, never the user's existing browser profile. Canceling login retains local data; the clear button removes local browsing data but does not log out on the server. When enabled, cookies and the user agent pass to the local backend through standard input and are sent to the upstream project's WorkBuddy HTTPS usage endpoint, which is not a stable public API contract. The app stops when it cannot confirm profile isolation; even unrelated WebView2 policies may prevent use. Top-level and popup navigation is restricted to HTTPS on WorkBuddy, QQ and Tencent domains; downloads and external apps are blocked, so some login methods may not work. Real accounts and sign-in flows remain unverified.
 
 Quota cards pass only the needed quota fields and multi-account labels to a local process over standard input, and store observed quota windows, peaks, reset times and card counts in `%LOCALAPPDATA%\AgentMeter\collection.json`, without keys or session content. Multi-account labels are distinguished by a hash; renaming an account starts a new tracking identity. Disabling account lookup stops new reads but does not delete existing local cards. An unreadable ledger is not overwritten as empty.
 
