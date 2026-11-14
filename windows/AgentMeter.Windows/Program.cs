@@ -454,7 +454,7 @@ internal sealed class MeterWindow : Form
             {
                 var sample = JsonNode.Parse(DemoData)!.AsObject();
                 sample["forecast"] = JsonNode.Parse("""{"status":"partial","cache_state":"fresh","sources":[{"name":"WillReset","status":"available","24h":35,"24h_basis":"published_answer","48h":55,"48h_basis":"cadence_model_fallback"},{"name":"Tibo Radar","status":"available","24h":28,"24h_basis":"published_answer","48h":49,"48h_basis":"published_answer"},{"name":"Reset Monitor","status":"unavailable"}]}""");
-                sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
+                sample["local_medals"] = JsonNode.Parse("""{"sources":2,"incomplete":false,"earned":1,"total":3,"active_days":12,"medals":[{"name":"亿级玩家","category":"day_peak","category_name":"单日用量","tier":"bronze","target":100000000,"unit":"tokens","value":120000000,"progress":1,"earned":true,"earned_on":"2026-11-12"},{"name":"五亿狂飙","category":"day_peak","category_name":"单日用量","tier":"silver","target":500000000,"unit":"tokens","value":120000000,"progress":0.24,"earned":false},{"name":"一周不停","category":"streak","category_name":"连续使用","tier":"bronze","target":7,"unit":"days","value":4,"progress":0.57,"earned":false}]}""");
                 using var preview = JsonDocument.Parse(sample.ToJsonString()); Render(preview.RootElement); status.Text = "演示数据 · 不代表真实账户";
             }
             else
@@ -821,7 +821,7 @@ internal sealed class MeterWindow : Form
                 string date = GetString(row, "earned_on", "");
                 string detail = $"当前 {FormatNumber(value.Value)} / {FormatNumber(target.Value)} {unit}" +
                     (hasMedal && date.Length == 10 ? " · 达成于 " + date : "");
-                AddCard(name, hasMedal ? "已获得" : "待解锁", detail, Math.Clamp(progress.Value * 100, 0, 100));
+                AddMedalCard(name, GetString(row, "tier", "bronze"), hasMedal, detail, Math.Clamp(progress.Value * 100, 0, 100));
             }
         }
         AddCard("尚在移植", "更多卡片与徽章", "签到、图片、估算花费等暂未计算", null);
@@ -1066,6 +1066,22 @@ internal sealed class MeterWindow : Form
         StyleCard(box); content.Controls.Add(box);
     }
     sealed record QuotaRow(string Name, double? Remaining, string Reset);
+
+    void AddMedalCard(string name, string tier, bool earned, string detail, double progress)
+    {
+        var box = new RoundedCard(theme) { Height = 112, Margin = new Padding(0, 0, 0, 12), BackColor = Card };
+        var badge = new MedalBadge(theme, tier, earned) { Location = new Point(16, 20), Size = new Size(58, 58),
+            AccessibleName = name + (earned ? "，已获得" : "，待解锁") };
+        var title = new Label { Text = name, AutoEllipsis = true, Height = 21, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold),
+            ForeColor = Muted, Location = new Point(85, 11) };
+        var state = new Label { Text = earned ? "已获得" : "待解锁", AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
+            ForeColor = Primary, Location = new Point(84, 31) };
+        var note = new Label { Text = detail, AutoEllipsis = true, Height = 21, ForeColor = Muted, Location = new Point(85, 84) };
+        var bar = new MeterBar(theme) { Value = progress, Location = new Point(85, 70), Height = 5 };
+        box.Controls.AddRange([badge, title, state, note, bar]);
+        box.Resize += (_, _) => { title.Width = note.Width = bar.Width = Math.Max(0, box.ClientSize.Width - 101); };
+        StyleCard(box); content.Controls.Add(box);
+    }
 
     static string ResetNote(JsonElement quota)
     {
