@@ -25,7 +25,7 @@
 - Kimi、OpenCode、MiniMax Code、MiMo Code、DevEco 和 Qoder CN 的新增读取器目前以模拟数据验证为主。Kimi 账户通过模拟本地服务测试；Claude Code 账户使用模拟本地凭据及模拟接口响应测试；两者均尚无真实 Windows 账户验收。OpenCode 检测到新版消息时标记统计不完整。
 - 真实大账本首次扫描约 91 秒，同一进程内第二次约 1.3 秒；缓存只保存在内存，文件变化会重新读取。测试结果只适用于本机数据规模。
 - GitHub Windows 运行器已构建便携包并通过隔离数据和程序启动检查；开发电脑也验证了解压启动。完整托盘交互与另一台独立实体电脑尚未验证。
-- 当前公开 [Alpha 2 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.2) 并非完整移植，尚未代码签名。该包对应提交 `2a078d7`；Windows 构建和跨平台检查通过，解压包已用隔离账本验证价格和账户开关。主题、通知、完整托盘交互和真实新增账户仍待实机验收。
+- 当前公开 [Alpha 3 预览版](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.3) 并非完整移植，尚未代码签名。该包对应提交 `2dda11d`；Windows 构建和跨平台检查通过，解压包已用隔离账本验证价格、活动汇总隐私和账户开关，桌宠窗口在隔离构建机完成基础启动检查。主题、通知、完整托盘交互和真实新增账户仍待实机验收。
 
 ## 安全与数据边界
 

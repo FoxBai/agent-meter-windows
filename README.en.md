@@ -16,30 +16,30 @@ A Windows system-tray companion for account limits and local agent usage, built 
 
 ![Agent Meter panel with fictional demo data](windows/assets/screenshot.png)
 
-The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version. The [sample report image](windows/assets/report-share-preview.png) was generated from fictional data by the current source; it is not included in Alpha 2.
+The screenshot shows an earlier Alpha interface with fictional demo data; the current source has changed. Actual availability depends on the agent, account, local files and version. The [sample report image](windows/assets/report-share-preview.png) was generated from fictional data; reports are included in Alpha 3.
 
 ## What it does
 
 - **System tray panel** — left-click the tray icon to show or hide the panel; right-click to open, refresh or quit. Closing the panel keeps the app in the tray.
 - **Account switches** — enable or disable Codex, Kimi, Claude and MiniMax account lookups independently from the tray menu. Local history is unaffected. The per-user preferences contain only switches, never credentials; MiniMax is off by default.
 - **Low-quota alerts** — optionally enable Windows notifications below 20% remaining; repeat alerts for the same window are suppressed. Alerts default to off, and actual notification display still needs device testing.
-- **Desktop pet (in development)** — the main branch includes the upstream Mochi and Bit sprite packs, hidden by default. Users can show, switch and drag them from the tray menu; animations respond to low quota and recent local updates. Transparency and interaction still need device testing; Alpha 2 does not include the pet, and the upstream 3D characters and full interactions are not yet ported.
+- **Desktop pet (in development)** — includes the upstream Mochi and Bit sprite packs, hidden by default. Users can show, switch and drag them from the tray menu; animations respond to low quota and recent local updates. Transparency and interaction still need device testing, and the upstream 3D characters and full interactions are not yet ported.
 - **Appearance** — choose from seven named palettes and card styles in the tray menu; the choice is remembered. The Windows port does not yet reproduce all macOS materials or animations, and visual review is ongoing.
 - **Codex account** — shows quota windows, reset times, credits and reset cards when the Codex account service returns them. A missing value is not treated as zero.
-- **Two-window gauges** — the main branch pairs a short window with the seven-day window where available, or shows a single ring otherwise. Alpha 2 has single-ring gauges; the new layout still needs device testing.
+- **Two-window gauges** — pairs a short window with the seven-day window where available, or shows a single ring otherwise. The layout still needs device testing.
 - **Kimi Code account** — reads an already-running local Kimi service without launching it; validated with a simulated server, not yet with a real Windows account.
 - **Claude Code account** — queries Anthropic's usage endpoint when an existing local subscription credential file is present, without refreshing or changing the login. Tested with simulated credentials and responses only.
-- **MiniMax Code accounts** — the main branch supports up to five separately queried accounts, with keys stored in Windows Credential Manager. Lookup is off by default. If the account-list file does not exist, existing `MINIMAX_TOKEN_PLAN_KEY` and `MINIMAX_REGION` environment variables can also be used. Synthetic tests only; not in Alpha 2.
+- **MiniMax Code accounts** — supports up to five separately queried accounts, with keys stored in Windows Credential Manager. Lookup is off by default. If the account-list file does not exist, existing `MINIMAX_TOKEN_PLAN_KEY` and `MINIMAX_REGION` environment variables can also be used. Synthetic tests only; real accounts and the editor still need device testing.
 - **Local usage** — reads supported session ledgers and displays today, 7-day, 30-day and all-time token totals. Qoder CN local credits are shown separately and never added to tokens. Account quota and local usage are separate measures.
-- **Application activity** — the main branch summarizes recent local records by client, including how many were updated in the 15 minutes before collection. This is a recency signal, not proof a process is running or a task succeeded. Coverage varies and Alpha 2 does not include this page.
+- **Application activity** — summarizes recent local records by client, including how many were updated in the 15 minutes before collection. This is a recency signal, not proof a process is running or a task succeeded. Coverage varies.
 - **Model ranking and daily trend** — ranks models over the past 7×24 hours and charts the latest seven calendar days in Beijing time. Incomplete sources are flagged; separate local ledgers can overlap.
-- **Calendar reports** — the main branch adds local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. This page is not in Alpha 2, and the export interaction still needs device testing.
+- **Calendar reports** — shows local totals for the current and previous calendar week and month, indicating that the current period is incomplete. It can export a Markdown summary or a themed PNG share card. Export interaction still needs device testing.
 - **API-equivalent estimates** — shows today's USD estimate for models with matching prices. Missing prices, breakdowns or peak/off-peak information are flagged. The tray menu can edit local USD overrides to the upstream built-in snapshot. Built-in prices may be outdated; some CNY prices use the fixed fallback rate of 7.25 CNY per USD. This is neither subscription spend nor a bill. Live price and exchange-rate updates are not yet available.
 - **Background refresh** — account data can appear while history is still being scanned. Manual refresh and a 15-minute timer are available. Parsed usage is cached in memory while the app is running; changed files are reread.
 
 ## Data sources
 
-The table describes the current `main` branch. MiniMax account lookup and calendar reports were added after Alpha 2. See subsequent release notes for other changes.
+The table describes the current `main` branch. Check the release notes for the exact contents of each download.
 
 | Source | Account quota | Local token history |
 | --- | --- | --- |
@@ -67,7 +67,7 @@ The new Kimi, OpenCode, MiniMax Code, MiMo Code, DevECo and Qoder CN readers hav
 
 ### Download the preview
 
-Download [Windows v0.1.0-alpha.2](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.2), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
+Download [Windows v0.1.0-alpha.3](https://github.com/FoxBai/agent-meter-windows/releases/tag/windows-v0.1.0-alpha.3), extract `AgentMeter-Windows-x64.zip`, and run `AgentMeter.Windows.exe` from the extracted folder. The portable bundle includes the required runtime. The preview is not code-signed; the release page includes a SHA-256 checksum. The complete tray lifecycle, themes and a separate clean physical installation have not yet been verified.
 
 ### Build from source
 
